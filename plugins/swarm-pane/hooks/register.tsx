@@ -258,6 +258,17 @@ export const register: Register = on => {
       </Box>
     )
 
+    // The pane keeps one shape: four sections, always drawn, counts beside each
+    // heading. Only what sits under a heading changes while a session runs.
+    const gap = <Text> </Text>
+    const head = (title: string, count: string) => (
+      <Box>
+        <Box flexGrow={1}><Text bold>{title}</Text></Box>
+        <Text dimColor>{count}</Text>
+      </Box>
+    )
+    const none = (what: string) => <Text dimColor>  {what}</Text>
+
     return (
       <Box flexDirection="column">
         {inline && (
@@ -266,15 +277,9 @@ export const register: Register = on => {
             {e.viewport?.columns ?? 0}/110 cols
           </Text>
         )}
-        <Box>
-          <Box flexGrow={1}>
-            <Text dimColor>{running.length} agent{w >= 34 ? ' running' : ''}</Text>
-          </Box>
-          <Text dimColor>{doneTasks.length}/{tasks.length}{w >= 34 ? ' tasks' : ''}</Text>
-        </Box>
 
-        <Text bold>{'\n'}TASKS</Text>
-        {tasks.length === 0 && <Text dimColor>  no task list in this session</Text>}
+        {head('TASKS', `${doneTasks.length}/${tasks.length}`)}
+        {tasks.length === 0 && none('no task list in this session')}
         {tight && doneTasks.length > 0 && (
           <Text dimColor>[✓] +{doneTasks.length} done earlier</Text>
         )}
@@ -291,8 +296,9 @@ export const register: Register = on => {
           return row(mark, markInk, t.content, zoneOf(known, t.content), a?.label, a ? ink(a) : undefined)
         })}
 
-        <Text bold>{'\n'}RUNNING</Text>
-        {running.length === 0 && <Text dimColor>  no agent running</Text>}
+        {gap}
+        {head('RUNNING', `${running.length}`)}
+        {running.length === 0 && none('no agent running')}
         {running.map(a => (
           <Box flexDirection="column">
             <Box>
@@ -312,11 +318,16 @@ export const register: Register = on => {
           </Box>
         ))}
 
+        {gap}
+        {head('ALERTS', `${warns.length}`)}
+        {warns.length === 0 && none(known.length === 0 ? 'no risk zones declared' : 'nothing flagged')}
         {warns.map(wn => (
           <Text color={WARN} wrap="truncate-end">⚠ {wn}</Text>
         ))}
 
-        {finished.length > 0 && <Text bold>{'\n'}DONE ({finished.length})</Text>}
+        {gap}
+        {head('DONE', `${finished.length}`)}
+        {finished.length === 0 && none('nothing finished yet')}
         {finished.slice(tight ? -1 : -2).map(a => (
           <Box>
             <Text color={OK}>{a.label} </Text>
@@ -326,7 +337,6 @@ export const register: Register = on => {
             </Text>
           </Box>
         ))}
-
       </Box>
     )
   })

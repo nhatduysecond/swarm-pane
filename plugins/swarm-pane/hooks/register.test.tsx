@@ -156,3 +156,21 @@ test('an agent that reports no agentId closes when its call returns', async ($, 
   expect((await ui.find({ type: 'Text', text: /DONE/ }))?.text).toContain('DONE')
   await ui.unmount()
 })
+
+test('the four headings stay on an empty session', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // Nothing has happened yet: the shape is the same, only the rows under it differ.
+  for (const heading of ['TASKS', 'RUNNING', 'ALERTS', 'DONE']) {
+    expect((await ui.find({ type: 'Text', text: new RegExp(`^${heading}$`) }))?.text).toBe(heading)
+  }
+  expect((await ui.find({ type: 'Text', text: /no agent running/ }))?.text).toContain('no agent')
+  await ui.unmount()
+})
