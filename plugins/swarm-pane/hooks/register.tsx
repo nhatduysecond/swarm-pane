@@ -72,6 +72,9 @@ export const fmt = (ms: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/** An agent the pane recorded before it counted tokens has none; it reads zero. */
+export const tokOf = (a: Pick<Agent, 'tok'>): number => (Number.isFinite(a.tok) ? a.tok : 0)
+
 export const ktok = (n: number): string => `${(n / 1000).toFixed(1)}k`
 
 /** Wraps on word boundaries; the pane draws each line beside its own bar. */
@@ -252,20 +255,18 @@ export const register: Register = on => {
   })
 
   // Each request of an agent's turn reports what it cost; summing them is the
-  // only live token figure there is. All four counts go in, cache reads
-  // included, so the row matches the figure the engine reports for that agent.
+  // only live token figure there is. Cache reads are left out, and that is what
+  // matches the engine's own figure for the agent: every step resends the whole
+  // cached prompt, so summing those reads counts one context tens of times over.
   on('turn.step', async function* ($, e, next) {
     const step = yield* next(e)
     const used = step.usage
     if (e.agentId && used) {
       const paid =
-        used.input_tokens +
-        used.output_tokens +
-        used.cache_creation_input_tokens +
-        used.cache_read_input_tokens
+        used.input_tokens + used.output_tokens + used.cache_creation_input_tokens
       await quiet(
         update($, agents, list =>
-          list.map(a => (a.id === e.agentId ? { ...a, tok: a.tok + paid } : a)),
+          list.map(a => (a.id === e.agentId ? { ...a, tok: tokOf(a) + paid } : a)),
         ),
       )
     }
@@ -386,7 +387,7 @@ export const register: Register = on => {
       `${doneTasks.length}/${tasks.length} tasks`,
       ...running.map(
         a =>
-          `${a.label} ${a.desc} · ${a.model} · ${a.effort} · ${fmt(now - a.startedAt)} · ${ktok(a.tok)} tok`,
+          `${a.label} ${a.desc} · ${a.model} · ${a.effort} · ${fmt(now - a.startedAt)} · ${ktok(tokOf(a))} tok`,
       ),
       ...warns.map(wn => `! ${wn}`),
     ].join('\n')
@@ -406,7 +407,7 @@ export const register: Register = on => {
         <Box>
           <Box flexGrow={1}><Text dimColor>this turn · {fmt(now - turnStart)}</Text></Box>
           <Text dimColor>
-            {list.length} agents · {ktok(list.reduce((n, a) => n + a.tok, 0))} tok
+            {list.length} agents · {ktok(list.reduce((n, a) => n + tokOf(a), 0))} tok
           </Text>
         </Box>
 
@@ -447,7 +448,7 @@ export const register: Register = on => {
                 <Text color={ink(a)}>{fmt(now - a.startedAt)}</Text>
               </Box>
               <Text dimColor>
-                {stack ? `${a.model} · ${a.effort}` : `${ktok(a.tok)} tok · ${a.tools} tools`}
+                {stack ? `${a.model} · ${a.effort}` : `${ktok(tokOf(a))} tok · ${a.tools} tools`}
               </Text>
             </Box>
           </Box>
@@ -485,7 +486,7 @@ export const register: Register = on => {
                 <Text dimColor>{fmt((a.endedAt ?? 0) - a.startedAt)}</Text>
               </Box>
               <Text dimColor>
-                {stack ? `${a.model} · ${a.effort}` : `${ktok(a.tok)} tok · ${a.tools} tools`}
+                {stack ? `${a.model} · ${a.effort}` : `${ktok(tokOf(a))} tok · ${a.tools} tools`}
               </Text>
             </Box>
           </Box>

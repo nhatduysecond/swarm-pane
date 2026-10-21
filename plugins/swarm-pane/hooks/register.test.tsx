@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { aim, bar, fmt, ktok, offRule, parseZones, wrap, zoneOf } from './register'
+import { aim, bar, fmt, ktok, offRule, parseZones, tokOf, wrap, zoneOf } from './register'
 
 const PANE = {
   plugin: 'swarm-pane',
@@ -75,6 +75,9 @@ test('the clock and the grey bar', () => {
 })
 
 test('tokens read as thousands, and a warning wraps to the pane', () => {
+  // An agent recorded before the pane counted tokens must not poison the total.
+  expect(tokOf({ tok: undefined as unknown as number })).toBe(0)
+  expect(tokOf({ tok: 1_200 })).toBe(1_200)
   expect(ktok(0)).toBe('0.0k')
   expect(ktok(400)).toBe('0.4k')
   expect(ktok(12_700)).toBe('12.7k')
@@ -279,7 +282,7 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   on('clock.every', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', () => ({ result: { agentId: 'ag-3' } }))
-  // All four counts go in, so the row matches what the engine reports.
+  // The cache read is left out; what remains is the engine's own figure.
   on('turn.step', async function* () {
     return {
       turnId: 't1',
@@ -309,9 +312,10 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   for await (const _chunk of stream) void _chunk
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  // 700 + 500 + 11_500 + 90_000 = 102.7k, the engine's own figure for the step.
-  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('102.7k tok')
-  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('102.7k tok')
+  // 700 + 500 + 11_500 = 12.7k. Summing the 90k read at every step would count
+  // one cached context dozens of times over and run to millions.
+  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('12.7k tok')
+  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('12.7k tok')
   await ui.unmount()
 })
 
