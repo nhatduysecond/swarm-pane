@@ -504,6 +504,36 @@ test('a plan written before the pane loaded is picked up from the transcript', a
   await ui.unmount()
 })
 
+test('every task mark is ASCII and holds the same width', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [
+      { content: 'first', status: 'completed', activeForm: 'a' },
+      { content: 'second', status: 'in_progress', activeForm: 'b' },
+      { content: 'third', status: 'pending', activeForm: 'c' },
+    ],
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const marks = (await ui.findAll({ type: 'Text' }))
+    .map(t => String(t.text ?? ''))
+    .filter(t => /^\[.\]$/.test(t))
+  expect(marks.length).toBe(3)
+  // One width for every row, and no character a terminal may draw double.
+  expect(new Set(marks.map(m => m.length)).size).toBe(1)
+  // eslint-disable-next-line no-control-regex
+  expect(marks.every(m => /^[\x20-\x7e]+$/.test(m))).toBe(true)
+  await ui.unmount()
+})
+
 test('checkbox rows of a plan file become the task list', () => {
   const plan = `# Phase 02
 

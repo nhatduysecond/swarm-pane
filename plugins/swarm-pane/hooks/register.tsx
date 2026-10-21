@@ -23,6 +23,14 @@ const planAt = atom({ plugin: 'swarm-pane', key: 'planAt' } as const, 0)
 let ticking = false
 const INK = ['#ff2d87', '#4ddbd0', '#a78bfa', '#ffb02e']
 const WARN = '#ffb02e'
+/**
+ * ASCII, and every mark the same width.
+ *
+ * A tick or a half-circle is an ambiguous-width character: one terminal draws
+ * it in one cell, another in two, and rows stop lining up where the font
+ * decides. Colour carries the state; the glyph only has to hold its column.
+ */
+const MARK = { completed: '[x]', in_progress: '[>]', pending: '[ ]' } as const
 const OK = '#35d07f'
 
 /**
@@ -549,7 +557,11 @@ export const register: Register = (on, options) => {
       whoInk?: string,
     ) => (
       <Box>
-        <Text color={markInk} dimColor={!markInk}>{mark} </Text>
+        {/* Fixed width: a terminal that draws a mark wide must not shift the
+            text of that row, or no two rows line up. */}
+        <Box width={4} flexShrink={0}>
+          <Text color={markInk} dimColor={!markInk}>{mark}</Text>
+        </Box>
         <Box flexGrow={1} minWidth={0}>
           <Text wrap="truncate-end" dimColor={!markInk}>{text}</Text>
         </Box>
@@ -620,11 +632,10 @@ export const register: Register = (on, options) => {
           }`,
         )}
         {tasks.length === 0 && none('no task list in this session')}
-        {hiddenDone > 0 && <Text dimColor>[✓] +{hiddenDone} done earlier</Text>}
+        {hiddenDone > 0 && <Text dimColor>{MARK.completed} +{hiddenDone} done earlier</Text>}
         {shown.map(t => {
           const a = t.status === 'in_progress' ? owner(t.content) : undefined
-          const mark =
-            t.status === 'completed' ? '[✓]' : t.status === 'in_progress' ? '[◐]' : '[ ]'
+          const mark = MARK[t.status as keyof typeof MARK] ?? MARK.pending
           const markInk =
             t.status === 'completed'
               ? OK
@@ -661,7 +672,7 @@ export const register: Register = (on, options) => {
         {alertLines.length > 0 && gap}
         {alertLines.map(line => (
           <Box>
-            <Text color={WARN}>▌ </Text>
+            <Box width={2} flexShrink={0}><Text color={WARN}>▌</Text></Box>
             <Box flexGrow={1} minWidth={0}>
               <Text color={WARN} wrap="truncate-end">
                 {line.lead ? line.text : `  ${line.text}`}
