@@ -1,6 +1,6 @@
 {
   "name": "swarm-pane",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "A pane beside the transcript showing every running subagent with its model, effort and elapsed time, plus the session's task list.",
   "author": {
     "name": "Richard Dang"
@@ -10,6 +10,11 @@
   "options": {
     "tasks": {
       "description": "Where the task list comes from when the session writes none: 'auto' reads the newest plan folder and, failing that, asks a small model to read the conversation; 'plan' reads the plan folder only; 'off' leaves the section empty.",
+      "type": "string",
+      "default": "auto"
+    },
+    "dock": {
+      "description": "Whether the pane asks for the fullscreen renderer, the only layout that seats a pane beside the transcript: 'auto' asks once, the first time the pane opens on the main screen, and the switch restarts and resumes the session; 'off' leaves your renderer alone and the pane sits above the prompt.",
       "type": "string",
       "default": "auto"
     }

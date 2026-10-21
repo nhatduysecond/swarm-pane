@@ -704,3 +704,63 @@ test('a record still waiting for its id is not drawn twice', () => {
   expect(found[0]?.id).toBe('ag-1')
   expect(found[0]?.callId).toBe('c1')
 })
+
+test('the pane asks for the renderer that seats it on the right, once', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  const kept: Record<string, unknown> = {}
+  on('store.get', (_, e) => ({ value: kept[e.key] }))
+  on('store.set', (_, e) => {
+    kept[e.key] = e.value
+    return { value: undefined }
+  })
+  const ran: string[] = []
+  on('command.run', (_, e) => {
+    ran.push(`${e.command} ${e.args}`.trim())
+    return { text: '' }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  // The main screen seats a pane above the prompt, so the renderer is asked for.
+  const inline = await $.ui.mount({
+    ...PANE, surface: 'terminal', viewport: { columns: 120, rows: 40, isFullscreen: false },
+  })
+  await inline.unmount()
+  expect(ran).toEqual(['tui fullscreen'])
+
+  // Asked once ever: a renderer that cannot start would otherwise be asked for
+  // again on the session that came back without it, and again after that.
+  const again = await $.ui.mount({
+    ...PANE, surface: 'terminal', viewport: { columns: 120, rows: 40, isFullscreen: false },
+  })
+  await again.unmount()
+  expect(ran).toEqual(['tui fullscreen'])
+})
+
+test('a pane the surface already docks asks for nothing', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  const ran: string[] = []
+  on('command.run', (_, e) => {
+    ran.push(e.command)
+    return { text: '' }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  // Fullscreen docks it, and an unknown viewport is not a classic one.
+  for (const viewport of [
+    { columns: 120, rows: 40, isFullscreen: true },
+    { columns: 120, rows: 40 },
+  ]) {
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+    await ui.unmount()
+  }
+  expect(ran).toEqual([])
+})

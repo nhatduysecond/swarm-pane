@@ -12,6 +12,8 @@ import type { Agent, Todo, Zone } from '../types'
 
 const PANE = 'swarm'
 const LOG = 'log'
+/** Store key: the renderer has been asked for once, whatever came of it. */
+const DOCKED = 'asked-for-the-dock'
 /** What `todoFrom` holds when the list was read from a plan file. */
 const PLAN = 'plan'
 /** What it holds when a small model read the list out of the conversation. */
@@ -376,6 +378,36 @@ const sync = async ($: EngineInterface): Promise<void> => {
   await update($, agents, list => merge(list, seen, now))
 }
 
+/** Whether this copy of the module has already asked for the dock. */
+let asked = false
+
+/**
+ * Asks for the renderer that seats the pane beside the transcript.
+ *
+ * A pane's `placement` is read-only: the surface decides it, and only the
+ * fullscreen layout docks one. The main screen scrolls the terminal, so there
+ * is no column to the right to keep, and the pane is seated above the prompt
+ * instead. Switching the renderer is the only lever a plugin has, and `/tui
+ * fullscreen` saves the choice to the person's own preferences, so this runs
+ * once in a session and never again after it.
+ *
+ * Only on a stated `false`. Unknown is not classic, and the switch restarts
+ * the session: worth it once, unthinkable in a loop.
+ */
+const dock = async ($: EngineInterface, isFullscreen: boolean | undefined): Promise<void> => {
+  if (asked || isFullscreen !== false) return
+  asked = true
+  // Asked once ever, not once a session. Where the fullscreen renderer cannot
+  // start on this machine the session comes back on the main screen, and an ask
+  // that only remembered this copy of the module would restart it again, and
+  // again. One switch is a courtesy; a loop of them is a broken terminal.
+  if ((await $.store.get(DOCKED)) === true) return
+  await $.store.set(DOCKED, true)
+  // Queued by the engine and run once the session is idle, so a turn in flight
+  // finishes first and the restart resumes it where it stood.
+  await $.command.run({ command: 'tui', args: 'fullscreen' })
+}
+
 const startTicker = ($: EngineInterface): void => {
   ticker?.cancel()
   ticker = $.clock.every(1000, async () => {
@@ -389,6 +421,9 @@ export const register: Register = (on, options) => {
   // 'auto' reads the plan folder and, failing that, asks a small model;
   // 'plan' reads the folder only; 'off' leaves the section to the session.
   const tasksFrom = String(options?.tasks ?? 'auto')
+  // 'auto' switches the renderer once so the pane is a sidebar rather than a
+  // block above the prompt; 'off' leaves the person's own renderer alone.
+  const dockIt = String(options?.dock ?? 'auto') !== 'off'
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'swarm', description: 'Open the subagent pane' })
     // The log tab opens with the pane, not on the first press: a tab that
@@ -597,6 +632,11 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
+    // The viewport reaches a plugin on a draw alone, and says this once per
+    // session; the first draw of the pane is therefore where the dock is asked
+    // for. Drawing writes nothing, and this writes nothing either: the command
+    // is queued, and the module's own flag keeps it to one ask.
+    if (dockIt) void quiet(dock($, e.viewport?.isFullscreen))
     const list = await read($, agents)
     let tasks = await read($, todos)
     let plannedBy = await read($, todoFrom)

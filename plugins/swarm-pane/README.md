@@ -57,6 +57,16 @@ fullscreen terminal 110 columns or wider; narrower, it opens above the prompt an
 drops its optional columns to fit. A line at the top tells you which of the two
 conditions a dock is still missing.
 
+Where a pane's seat comes from is not the plugin's to decide: `placement` is
+read-only, and only the fullscreen layout keeps a column beside the transcript —
+the main screen scrolls, so there is nowhere to the right to keep. So the first
+time the pane opens on the main screen it runs `/tui fullscreen` for you, which
+restarts and resumes the session and saves the choice to your own preferences:
+every session after that opens docked, and the ask is never made again, even if
+the renderer failed to start. `claude plugin configure swarm-pane@<marketplace>`
+sets `dock` to `off` to keep your own renderer and read the pane above the
+prompt.
+
 ## Risk zones
 
 If the open project's `CLAUDE.md` has a section whose heading mentions risk zones,
