@@ -39,9 +39,9 @@ the plan names.
 With neither — no task tool, no plan file — a small model (`haiku`) reads the list
 out of the conversation at the end of each of your turns, at most once a minute,
 and the heading says `read` so an inferred list is never mistaken for one the
-session wrote. It is the last source tried, never the first. `claude plugin
-configure swarm-pane@<marketplace>` sets `tasks`: `auto` (the three sources above),
-`plan` (never asks a model), or `off` (the session's own list only). A subagent that
+session wrote. It is the last source tried, never the first. The `tasks` field
+picks between `auto` (the three sources above), `plan` (never asks a model) and
+`off` (the session's own list only). A subagent that
 plans its own work is drawn only while the session has no plan of its own, with
 the agent's label beside the heading so it is clear whose list it is.
 
@@ -63,19 +63,30 @@ the main screen scrolls, so there is nowhere to the right to keep. So the first
 time the pane opens on the main screen it runs `/tui fullscreen` for you, which
 restarts and resumes the session and saves the choice to your own preferences:
 every session after that opens docked, and the ask is never made again, even if
-the renderer failed to start. `claude plugin configure swarm-pane@<marketplace>`
-sets `dock` to `off` to keep your own renderer and read the pane above the
-prompt.
+the renderer failed to start. Set `dock` to `off` to keep your own renderer and
+read the pane above the prompt.
+
+## Settings
+
+Four fields, all optional, each with a default that needs no setting:
+`tasks`, `dock`, `heading` and `background`, described below and in the manifest.
+
+```
+/plugin configure swarm-pane            # in Claude Code, a screen per field
+claude plugin configure swarm-pane@<marketplace>   # shows them and which are set
+echo '{"heading":"claude"}' | claude plugin configure swarm-pane@<marketplace> --values-stdin
+```
+
+A change reloads the hooks module with the new values; the pane redraws with them.
 
 ## Colours
 
 Each section heading is a filled bar, in `subtle` by default: a theme key, so it
 follows your light or dark theme rather than a colour picked for one of them.
-`claude plugin configure swarm-pane@<marketplace>` sets `heading` to another
-theme key (`inactive`, `claude`, `success`, ...), to a hex colour, or to `off`
-for the plain heading with a rule after it. `background` fills the whole pane the
-same way and is empty by default, because a fill is a fixed colour over the
-column and takes the terminal's own transparency with it. Everything else is
+`heading` takes another theme key (`inactive`, `claude`, `success`, ...), a hex
+colour, or `off` for the plain heading with a rule after it. `background` fills
+the whole pane the same way and is empty by default, because a fill is a fixed
+colour over the column and takes the terminal's own transparency with it. Everything else is
 coloured text on your terminal's background: one accent per agent, shared by its
 task row and its block, green for finished work, amber for a warning.
 

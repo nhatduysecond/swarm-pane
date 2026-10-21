@@ -789,3 +789,26 @@ test('every section heading is a bar in theme colours, and the pane is unfilled'
   expect(root?.props?.backgroundColor).toBe(undefined)
   await ui.unmount()
 })
+
+test('the colours are the person\'s to set', { options: { heading: 'off', background: '#1b1b2a' } },
+  async ($, on) => {
+    on('command.register', () => ({ value: { command: 'swarm' } }))
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('session.start', (_, e) => ({ cwd: e.cwd }))
+    on('clock.now', () => ({ value: 1_000_000 }))
+    on('clock.every', () => ({ value: undefined }))
+
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+    // 'off' is the plain heading again, with the rule after it and no bar.
+    const title = await ui.find({ type: 'Text', text: /^TASKS/ })
+    expect(title?.props?.backgroundColor).toBe(undefined)
+    expect(await ui.find({ type: 'Text', text: /─/ })).toBeDefined()
+
+    // A fill is held to the room the pane was given, or it ends ragged.
+    const root = await ui.find({ type: 'Box', props: { flexDirection: 'column' } })
+    expect(root?.props?.backgroundColor).toBe('#1b1b2a')
+    expect(root?.props?.minHeight).toBe(PANE.props.scroll.bodyRows)
+    await ui.unmount()
+  })
