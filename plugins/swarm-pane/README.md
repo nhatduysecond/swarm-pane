@@ -57,7 +57,7 @@ is sent anywhere, and what the pane keeps lives in the session's own plugin stat
 
 ## What the hooks do
 
-Nine handlers, listed with what each one reads and whether it changes anything.
+Ten handlers, listed with what each one reads and whether it changes anything.
 None of them rewrites a prompt, a tool call, a setting, an instruction or a tool
 description, and none denies anything. Two write something of their own, both on a
 press: the stop button ends the agent's turn, and the warning raises a toast.
