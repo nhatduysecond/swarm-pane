@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  aim, bar, fmt, ktok, offRule, parsePlan, parseZones, spend, tokOf, wrap, zoneOf,
+  aim, bar, fmt, ktok, merge, offRule, parsePlan, parseZones, spend, tokOf, wrap, zoneOf,
 } from './register'
 
 const PANE = {
@@ -657,4 +657,50 @@ test('finished work is dimmed and the work in hand is not', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /in hand/ }))?.props?.dimColor).toBeFalsy()
   expect((await ui.find({ type: 'Text', text: /to come/ }))?.props?.dimColor).toBeFalsy()
   await ui.unmount()
+})
+
+test("the engine's own list fills in what the events missed", () => {
+  const known = [{
+    label: 'a-01', callId: 'c1', id: 'ag-1', desc: 'review the diff',
+    type: 'general-purpose', model: 'sonnet', effort: 'high',
+    startedAt: 1_000, tools: 7, ctx: 90_000, out: 2_000,
+  }]
+  const found = merge(known, [
+    { id: 'ag-1', description: 'review the diff', type: 'general-purpose', status: 'running' },
+    { id: 'ag-2', description: 'run the suite', type: 'Explore', status: 'running' },
+  ], 5_000)
+
+  // The agent nothing recorded is drawn, and the one that was keeps its count.
+  expect(found.map(a => a.label)).toEqual(['a-01', 'a-02'])
+  expect(found[1]?.desc).toBe('run the suite')
+  expect(found[0]?.tools).toBe(7)
+  expect(found[0]?.ctx).toBe(90_000)
+
+  // A finished agent stops running, and an unchanged list writes nothing.
+  const over = merge(found, [
+    { id: 'ag-1', description: 'review the diff', type: 'general-purpose', status: 'completed' },
+    { id: 'ag-2', description: 'run the suite', type: 'Explore', status: 'running' },
+  ], 9_000)
+  expect(over[0]?.endedAt).toBe(9_000)
+  expect(over[1]?.endedAt).toBe(undefined)
+  expect(merge(over, [
+    { id: 'ag-1', description: 'review the diff', type: 'general-purpose', status: 'completed' },
+    { id: 'ag-2', description: 'run the suite', type: 'Explore', status: 'running' },
+  ], 12_000)).toBe(over)
+
+  // An agent dropped from the list keeps its row: its tokens are in it.
+  expect(merge(over, [], 13_000)).toBe(over)
+})
+
+test('a record still waiting for its id is not drawn twice', () => {
+  const waiting = [{
+    label: 'a-01', callId: 'c1', desc: 'review the diff', type: 'general-purpose',
+    model: 'sonnet', effort: 'high', startedAt: 1_000, tools: 0, ctx: 0, out: 0,
+  }]
+  const found = merge(waiting, [
+    { id: 'ag-1', description: 'review the diff', type: 'general-purpose', status: 'running' },
+  ], 2_000)
+  expect(found).toHaveLength(1)
+  expect(found[0]?.id).toBe('ag-1')
+  expect(found[0]?.callId).toBe('c1')
 })

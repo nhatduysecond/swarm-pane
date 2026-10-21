@@ -1,5 +1,12 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, ModelUsage, Register, SessionMessage } from 'claude-code'
+import type {
+  AgentInfo,
+  EngineInterface,
+  ModelUsage,
+  Register,
+  SessionMessage,
+  Timer,
+} from 'claude-code'
 
 import type { Agent, Todo, Zone } from '../types'
 
@@ -20,7 +27,8 @@ const todoFrom = atom({ plugin: 'swarm-pane', key: 'todoFrom' } as const, '')
 const planAt = atom({ plugin: 'swarm-pane', key: 'planAt' } as const, 0)
 
 /** One colour per agent, shared by its task row and its agent block. */
-let ticking = false
+/** The one-second clock behind every elapsed time the pane draws. */
+let ticker: Timer | undefined
 const INK = ['#ff2d87', '#4ddbd0', '#a78bfa', '#ffb02e']
 const WARN = '#ffb02e'
 /**
@@ -264,6 +272,69 @@ export const bar = (ms: number, longest: number, w = 8): string => {
 
 const live = (list: readonly Agent[]) => list.filter(a => a.endedAt === undefined)
 
+/** The statuses that mean an agent's loop is over, whatever reached them. */
+const OVER = new Set(['completed', 'failed', 'killed'])
+
+/**
+ * The engine's own agent list folded into what the events recorded.
+ *
+ * Events are quicker and they are what carries tokens and tool counts, but
+ * they only see what the Agent tool spawned in a loop this plugin hooks: a
+ * forked skill, another plugin's spawn, a resumed run, or a spawn whose
+ * bookkeeping was lost to a reload leaves no record at all. `$.agent.list()`
+ * names every agent of the session, so reconciling against it is what makes a
+ * missed agent appear and a finished one stop counting as live.
+ *
+ * It only adds and closes, never removes: the engine drops an agent from the
+ * list a while after it ends, and a row that left with it would take its
+ * tokens and its place in the done count along.
+ */
+export const merge = (
+  known: Agent[],
+  seen: readonly AgentInfo[],
+  now: number,
+): Agent[] => {
+  let out: Agent[] | undefined
+  const of = (): Agent[] => (out ??= [...known])
+  for (const info of seen) {
+    const list = out ?? known
+    // The Agent call is recorded before the spawn answers with its id, so a
+    // record still waiting for one is matched by its task: without that, a
+    // reconcile landing in between would draw the same agent twice.
+    const at = list.findIndex(a => a.id === info.id)
+    const seat =
+      at >= 0
+        ? at
+        : list.findIndex(
+            a => a.id === undefined && a.endedAt === undefined && a.desc === info.description,
+          )
+    const ends = OVER.has(info.status) ? now : undefined
+    if (seat < 0) {
+      // Nothing holds an agent's start but the event this record missed, so a
+      // found agent's clock runs from the moment the pane first saw it.
+      of().push({
+        label: `a-${String(list.length + 1).padStart(2, '0')}`,
+        callId: `list:${info.id}`,
+        id: info.id,
+        desc: info.description === '' ? info.type : info.description,
+        type: info.type,
+        model: 'inherit',
+        effort: 'medium',
+        startedAt: now,
+        endedAt: ends,
+        tools: 0,
+        ctx: 0,
+        out: 0,
+      })
+      continue
+    }
+    const held = list[seat] as Agent
+    if (held.id === info.id && (held.endedAt !== undefined || ends === undefined)) continue
+    of()[seat] = { ...held, id: info.id, endedAt: held.endedAt ?? ends }
+  }
+  return out ?? known
+}
+
 /**
  * The agent the stop button aims at, and the one the log tab follows unpinned:
  * the flagged one, else the one that has been running longest.
@@ -283,6 +354,35 @@ const quiet = async (work: Promise<unknown>): Promise<void> => {
   } catch {
     // a pane one beat out of date beats blocking the user's command
   }
+}
+
+/**
+ * Starts, or restarts, the clock that moves the pane's elapsed times.
+ *
+ * A reload cancels the old timer along with the environment that held it, and
+ * the engine re-fires `session.start` for changed modules only — so a reloaded
+ * pane can be left with no clock at all, drawing times that never move.
+ * Cancelling and re-registering is cheap and idempotent, and `/swarm` does it
+ * too, so a frozen pane recovers without restarting the session.
+ */
+/** Folds the engine's agent list into the pane's record; see `merge`. */
+const sync = async ($: EngineInterface): Promise<void> => {
+  const seen = await $.agent.list()
+  const now = await $.clock.now()
+  // Merged twice so an unchanged list writes nothing: a write redraws every
+  // reader, and this runs every second for the whole session.
+  const held = await read($, agents)
+  if (merge(held, seen, now) === held) return
+  await update($, agents, list => merge(list, seen, now))
+}
+
+const startTicker = ($: EngineInterface): void => {
+  ticker?.cancel()
+  ticker = $.clock.every(1000, async () => {
+    await quiet(sync($))
+    const list = await read($, agents)
+    if (live(list).length > 0) await quiet(update($, tick, n => n + 1))
+  })
 }
 
 export const register: Register = (on, options) => {
@@ -322,14 +422,7 @@ export const register: Register = (on, options) => {
       }
     }
 
-    // session.start fires again on every reload; one clock is enough.
-    if (!ticking) {
-      ticking = true
-      $.clock.every(1000, async () => {
-        const list = await read($, agents)
-        if (live(list).length > 0) await quiet(update($, tick, n => n + 1))
-      })
-    }
+    startTicker($)
 
     return next(e)
   })
@@ -337,6 +430,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'swarm' }, async $ => {
     await $.ui.open({ id: LOG, title: LOG, columns: 56 })
     await $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
+    startTicker($)
     return { text: 'Swarm pane opened.' }
   })
 

@@ -100,6 +100,17 @@ press: the stop button ends the agent's turn, and the warning raises a toast.
 Bookkeeping failures are swallowed on purpose: a pane one beat out of date is
 better than a blocked tool call.
 
+Besides the hooks, a one-second clock asks the engine for its own list of the
+session's agents and folds it into what the events recorded. Events are quicker,
+and they are what carries tokens and tool counts, but they see only what the
+Agent tool spawned in a loop this plugin hooks: a forked skill, another plugin's
+spawn, a resumed run, or a spawn whose bookkeeping was lost to a reload would
+otherwise never reach the pane. The reconcile only adds an agent and marks a
+finished one done; it never removes a row, because the engine drops an agent from
+its list a while after it ends and the row holds that agent's tokens. A
+workflow's agents are in no list, so they are still counted from their calls
+alone.
+
 ## Notes
 
 The elapsed bar is relative to the longest-running live agent, not progress — no
