@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, ModelUsage, Register } from 'claude-code'
+import type { EngineInterface, ModelUsage, Register, SessionMessage } from 'claude-code'
 
 import type { Agent, Todo, Zone } from '../types'
 
@@ -7,6 +7,8 @@ const PANE = 'swarm'
 const LOG = 'log'
 /** What `todoFrom` holds when the list was read from a plan file. */
 const PLAN = 'plan'
+/** What it holds when a small model read the list out of the conversation. */
+const READ = 'read'
 
 const agents = atom({ plugin: 'swarm-pane', key: 'agents' } as const, [])
 const todos = atom({ plugin: 'swarm-pane', key: 'todos' } as const, [])
@@ -136,6 +138,41 @@ const readPlan = async ($: EngineInterface, now: number): Promise<void> => {
   await update($, todoFrom, () => PLAN)
 }
 
+/** How long a read list stands before a small model is asked again. */
+const READ_EVERY = 60_000
+
+const ASK = [
+  'Read the conversation above and answer with the task list it is working',
+  'through, as checkbox rows and nothing else: `- [x] done`, `- [~] in hand`,',
+  '`- [ ] still to do`. At most 8 rows, each under 60 characters, in the',
+  'language of the conversation. No heading, no prose, no explanation. Answer',
+  'with nothing at all if the conversation names no tasks.',
+].join(' ')
+
+/**
+ * The task list a small model reads out of the conversation.
+ *
+ * The last resort: a build with no task tool, and a repository with no plan
+ * file, still shows what the session is working through. It costs one small
+ * completion a turn, so it is the third source tried, never the first.
+ */
+const readByModel = async ($: EngineInterface, said: readonly SessionMessage[]) => {
+  const recent = said
+    .slice(-12)
+    .map(m => `${m.role}: ${(m.text || m.toolUses.map(u => u.tool).join(', ')).slice(0, 400)}`)
+    .join('\n')
+  if (recent.trim() === '') return undefined
+
+  const reply = await $.model.complete({
+    model: 'haiku',
+    prompt: `${recent}\n\n---\n${ASK}`,
+    maxTokens: 400,
+  })
+  if (!reply.isAnswered) return undefined
+  const found = parsePlan(reply.text)
+  return found.length > 0 ? found : undefined
+}
+
 /** A TodoWrite's input, as the pane keeps it. */
 export const asTodos = (input: unknown): Todo[] | undefined => {
   const list = (input as { todos?: unknown }).todos
@@ -240,7 +277,10 @@ const quiet = async (work: Promise<unknown>): Promise<void> => {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // 'auto' reads the plan folder and, failing that, asks a small model;
+  // 'plan' reads the folder only; 'off' leaves the section to the session.
+  const tasksFrom = String(options?.tasks ?? 'auto')
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'swarm', description: 'Open the subagent pane' })
     // The log tab opens with the pane, not on the first press: a tab that
@@ -266,7 +306,7 @@ export const register: Register = on => {
       // A session whose transcript cannot be read starts with an empty list.
     }
 
-    if ((await read($, todos)).length === 0) {
+    if (tasksFrom !== 'off' && (await read($, todos)).length === 0) {
       try {
         await readPlan($, await $.clock.now())
       } catch {
@@ -379,6 +419,7 @@ export const register: Register = on => {
   })
 
   // A subagent answers with its own turn.complete; that is when its run ends.
+  // The session's own end is where the last of the task sources is tried.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId) {
       const done = await $.clock.now()
@@ -387,8 +428,28 @@ export const register: Register = on => {
           list.map(a => (a.id === e.agentId && a.endedAt === undefined ? { ...a, endedAt: done } : a)),
         ),
       )
+      return next(e)
     }
-    return next(e)
+
+    const ran = await next(e)
+    if (tasksFrom !== 'auto') return ran
+
+    // Nothing the session or the repository wrote: a small model reads the
+    // list out of the conversation, once a turn and no oftener than a minute.
+    await quiet(
+      (async () => {
+        const held = await read($, todoFrom)
+        if ((await read($, todos)).length > 0 && held !== READ) return
+        const now = await $.clock.now()
+        if (held === READ && now - (await read($, planAt)) < READ_EVERY) return
+        const found = await readByModel($, await $.session.messages())
+        if (found === undefined) return
+        await update($, planAt, () => now)
+        await update($, todos, () => found)
+        await update($, todoFrom, () => READ)
+      })(),
+    )
+    return ran
   })
 
   // Each request of an agent's turn reports what it cost. The prompt replaces
@@ -437,7 +498,7 @@ export const register: Register = on => {
     const list = await read($, agents)
     let tasks = await read($, todos)
     let plannedBy = await read($, todoFrom)
-    if (tasks.length === 0 || plannedBy === PLAN) {
+    if (tasksFrom !== 'off' && (tasks.length === 0 || plannedBy === PLAN)) {
       // A plan file changes under the pane; a TodoWrite announces itself.
       await quiet(readPlan($, await $.clock.now()))
       tasks = await read($, todos)
@@ -553,6 +614,8 @@ export const register: Register = on => {
               ? ''
               : plannedBy === PLAN
                 ? ' plan'
+                : plannedBy === READ
+                  ? ' read'
                 : ` ${list.find(a => a.id === plannedBy)?.label ?? 'agent'}`
           }`,
         )}

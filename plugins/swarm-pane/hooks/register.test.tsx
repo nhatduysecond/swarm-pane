@@ -568,3 +568,38 @@ test('the pane draws the newest plan folder that holds a list', async ($, on) =>
   expect((await ui.find({ type: 'Text', text: /1\/2 plan/ }))?.text).toContain('plan')
   await ui.unmount()
 })
+
+test('a small model reads the list when nothing else wrote one', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('fs.list', () => ({ value: [] }))
+  on('session.messages', () => ({
+    value: [{ role: 'user', text: 'fix the pane', toolUses: [] }],
+  }))
+  on('turn.complete', () => ({ text: 'done' }))
+  on('model.complete', () => ({
+    value: {
+      isAnswered: true,
+      text: '- [x] read the hook\n- [~] fix the header\n- [ ] run the tests\n',
+      usage: {
+        input_tokens: 900, output_tokens: 40,
+        cache_creation_input_tokens: 0, cache_read_input_tokens: 0, model: 'haiku',
+      },
+    },
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({
+    text: 'done', answer: 'done', durationMs: 10, isAborted: false,
+    turnId: 't1', reason: 'answer',
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /fix the header/ }))?.text).toContain('header')
+  // The heading says the list was read, not written by the session.
+  expect((await ui.find({ type: 'Text', text: /1\/3 read/ }))?.text).toContain('read')
+  await ui.unmount()
+})

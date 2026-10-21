@@ -33,7 +33,14 @@ folder of reports or a bare brief does not silence the section — whose `- [x]`
 `- [ ]` rows become the list,
 reread every ten seconds while the pane is open, with `plan` beside the heading
 to say where it came from. A build whose task tool is absent still shows the work
-the plan names. A subagent that
+the plan names.
+
+With neither — no task tool, no plan file — a small model (`haiku`) reads the list
+out of the conversation at the end of each of your turns, at most once a minute,
+and the heading says `read` so an inferred list is never mistaken for one the
+session wrote. It is the last source tried, never the first. `claude plugin
+configure swarm-pane@<marketplace>` sets `tasks`: `auto` (the three sources above),
+`plan` (never asks a model), or `off` (the session's own list only). A subagent that
 plans its own work is drawn only while the session has no plan of its own, with
 the agent's label beside the heading so it is clear whose list it is.
 
@@ -61,7 +68,9 @@ stop it. The warning is drawn beside the running list, under a bar, rather than 
 a section of its own.
 
 `CLAUDE.md` and, when the session has no task list, the newest folder under
-`plans/` are the only files this plugin reads. The rest of what it draws comes
+`plans/` are the only files this plugin reads. Under `tasks: auto` it also sends
+the last few messages of your own session to the same API the session already
+uses, to read the task list out of them; `tasks: plan` or `off` sends nothing. The rest of what it draws comes
 from your own session: the events it hooks, the session's own messages, read once
 at startup for a plan already made, and — for the log tab — the messages of the
 subagent that tab follows. Nothing
@@ -82,7 +91,7 @@ press: the stop button ends the agent's turn, and the warning raises a toast.
 | `agent.spawn` | Keeps the started agent's id so the agent's own tool calls can be counted against it | none; the spawn is passed through untouched and the engine's result is returned as received |
 | `tool.call` (all) | Counts tool calls per agent, and reads `TodoWrite` input to mirror the task list | none; every call is passed through |
 | `turn.start` | Keeps the turn's clock, and the id of a subagent's turn, which the stop button ends | none; passes through |
-| `turn.complete` | Ends a subagent's run, which is what moves it to DONE | none; passes through |
+| `turn.complete` | Ends a subagent's run, which is what moves it to DONE, and at the end of your own turn asks a small model for the task list when nothing else wrote one | none; passes through. The model call is the plugin's own, tool-less, and only under `tasks: auto` |
 | `turn.step` | Reads what each of an agent's model requests cost, to keep its token figure | none; the stream is passed through chunk for chunk |
 | `ui.render` (`swarm`) | Draws the pane | draws its own pane; the stop button ends that agent's turn |
 | `ui.render` (`log`) | Draws the log tab from the followed agent's own messages | draws its own pane only |
