@@ -456,3 +456,48 @@ test('a step replaces the prompt and adds only what was written', () => {
     cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
   }))).toBe(30)
 })
+
+test('a plan written before the pane loaded is picked up from the transcript', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'do the thing', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool: 'TodoWrite', input: { todos: [{ content: 'an older plan', status: 'completed' }] } },
+          { tool: 'Read', input: { file_path: '/x' } },
+        ],
+      },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          {
+            tool: 'TodoWrite',
+            input: {
+              todos: [
+                { content: 'build the thing', status: 'completed' },
+                { content: 'check the thing', status: 'in_progress' },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // The newest plan in the transcript, not the one before it.
+  expect((await ui.find({ type: 'Text', text: /check the thing/ }))?.text).toContain('check')
+  expect(await ui.find({ type: 'Text', text: /an older plan/ })).toBe(undefined)
+  expect((await ui.find({ type: 'Text', text: /^1\/2\s*$/ }))?.text).toContain('1/2')
+  await ui.unmount()
+})

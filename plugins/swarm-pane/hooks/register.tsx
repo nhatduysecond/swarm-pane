@@ -67,6 +67,35 @@ export const offRule = (zones: readonly Zone[], a: Agent): string | undefined =>
   return undefined
 }
 
+/** A TodoWrite's input, as the pane keeps it. */
+export const asTodos = (input: unknown): Todo[] | undefined => {
+  const list = (input as { todos?: unknown }).todos
+  if (!Array.isArray(list)) return undefined
+  return list.map(t => ({
+    content: String((t as Todo).content ?? ''),
+    status: String((t as Todo).status ?? ''),
+  }))
+}
+
+/**
+ * The newest plan in a transcript, or nothing.
+ *
+ * The pane sees a TodoWrite only while it is loaded, so a session that planned
+ * before it opened — or before the plugin was reloaded — would show an empty
+ * section with a full plan sitting in its own transcript.
+ */
+export const planIn = (said: readonly { toolUses?: readonly { tool: string; input: unknown }[] }[]) => {
+  for (let i = said.length - 1; i >= 0; i--) {
+    const uses = said[i]?.toolUses ?? []
+    for (let u = uses.length - 1; u >= 0; u--) {
+      if (uses[u]?.tool !== 'TodoWrite') continue
+      const found = asTodos(uses[u]?.input)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
 export const fmt = (ms: number): string => {
   const s = Math.max(0, Math.round(ms / 1000))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -156,6 +185,16 @@ export const register: Register = on => {
       await update($, zones, () => parseZones(md))
     } catch {
       // No CLAUDE.md in this project: no chips, no warnings.
+    }
+
+    try {
+      const planned = planIn(await $.session.messages())
+      if (planned) {
+        await update($, todos, () => planned)
+        await update($, todoFrom, () => '')
+      }
+    } catch {
+      // A session whose transcript cannot be read starts with an empty list.
     }
 
     // session.start fires again on every reload; one clock is enough.
@@ -307,9 +346,7 @@ export const register: Register = on => {
             const from = e.agentId ?? ''
             const held = await read($, todoFrom)
             if (from !== '' && held === '' && (await read($, todos)).length > 0) return
-            await update($, todos, () =>
-              list.map(t => ({ content: String(t.content ?? ''), status: String(t.status ?? '') })),
-            )
+            await update($, todos, () => asTodos({ todos: list }) ?? [])
             await update($, todoFrom, () => from)
           })(),
         )

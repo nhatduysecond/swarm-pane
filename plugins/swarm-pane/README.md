@@ -23,7 +23,9 @@ then keeps showing after that agent has finished. Three keys work while the pane
 holds the keyboard (`ctrl+x tab`, or a click): `s` stops the agent it names, `t`
 opens the log tab, `c` copies the summary.
 
-The session's own `TodoWrite` fills the task list and always wins. A subagent that
+The session's own `TodoWrite` fills the task list and always wins. A plan made
+before the pane opened is read back from the session's own transcript when it
+starts, so a pane opened — or a plugin reloaded — mid-session still shows it. A subagent that
 plans its own work is drawn only while the session has no plan of its own, with
 the agent's label beside the heading so it is clear whose list it is.
 
@@ -51,8 +53,9 @@ stop it. The warning is drawn beside the running list, under a bar, rather than 
 a section of its own.
 
 `CLAUDE.md` is the only file this plugin reads. The rest of what it draws comes
-from your own session: the events it hooks, and — for the log tab alone — the
-messages of the subagent that tab follows, read back through the session. Nothing
+from your own session: the events it hooks, the session's own messages, read once
+at startup for a plan already made, and — for the log tab — the messages of the
+subagent that tab follows. Nothing
 is sent anywhere, and what the pane keeps lives in the session's own plugin state.
 
 ## What the hooks do
@@ -64,7 +67,7 @@ press: the stop button ends the agent's turn, and the warning raises a toast.
 
 | Hook | What it does | Changes |
 |---|---|---|
-| `session.start` | Registers the `/swarm` command, opens the pane, reads the project's `CLAUDE.md` once for risk zones | none; passes through |
+| `session.start` | Registers the `/swarm` command, opens both tabs, reads the project's `CLAUDE.md` for risk zones and the session's own transcript for a plan already made | none; passes through |
 | `command.run` (`swarm`) | Answers the plugin's own `/swarm` command by reopening the pane | answers only its own command; no other command reaches it |
 | `tool.call` (`Agent`) | Reads the description, subagent type, model and effort of a subagent about to start, and raises the toast when it breaks the rule | none; the call runs as written, and a failure of this bookkeeping is swallowed before it |
 | `agent.spawn` | Keeps the started agent's id so the agent's own tool calls can be counted against it | none; the spawn is passed through untouched and the engine's result is returned as received |
