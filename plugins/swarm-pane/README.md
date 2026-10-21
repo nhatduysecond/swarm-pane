@@ -112,7 +112,7 @@ is sent anywhere, and what the pane keeps lives in the session's own plugin stat
 
 ## What the hooks do
 
-Ten handlers, listed with what each one reads and whether it changes anything.
+Eleven handlers, listed with what each one reads and whether it changes anything.
 None of them rewrites a prompt, a tool call, a setting, an instruction or a tool
 description, and none denies anything. Two write something of their own, both on a
 press: the stop button ends the agent's turn, and the warning raises a toast.
@@ -120,6 +120,7 @@ press: the stop button ends the agent's turn, and the warning raises a toast.
 | Hook | What it does | Changes |
 |---|---|---|
 | `session.start` | Registers the `/swarm` command, opens both tabs, reads the project's `CLAUDE.md` for risk zones, the session's own transcript for a plan already made, and the newest `plans/` folder when there is none | none; passes through |
+| `session.end` (`clear`) | Empties the agents, the tokens and the task list when a `/clear` ends the conversation. The engine raises no `session.start` for what follows a clear, so this is the only place the pane learns of it | none; passes through |
 | `command.run` (`swarm`) | Answers the plugin's own `/swarm` command by reopening the pane | answers only its own command; no other command reaches it |
 | `tool.call` (`Agent`) | Reads the description, subagent type, model and effort of a subagent about to start, and raises the toast when it breaks the rule | none; the call runs as written, and a failure of this bookkeeping is swallowed before it |
 | `agent.spawn` | Keeps the started agent's id so the agent's own tool calls can be counted against it | none; the spawn is passed through untouched and the engine's result is returned as received |

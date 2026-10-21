@@ -812,3 +812,45 @@ test('the colours are the person\'s to set', { options: { heading: 'off', backgr
     expect(root?.props?.minHeight).toBe(PANE.props.scroll.bodyRows)
     await ui.unmount()
   })
+
+test('a cleared conversation leaves no agent and no task behind', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.end', (_, e) => ({ sessionId: e.sessionId ?? 'cleared' }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: {} }))
+  // No plans folder: the task list has nothing to fall back to after the clear.
+  on('fs.list', () => ({ deny: 'no such folder' }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'Agent',
+    description: 'review the diff',
+    prompt: 'x',
+    subagent_type: 'general-purpose',
+    model: 'sonnet',
+    effort: 'medium',
+  })
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [{ content: 'fix the token count', status: 'completed', activeForm: 'a' }],
+  })
+
+  const before = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await before.find({ type: 'Text', text: /review the diff/ }))?.text).toBeDefined()
+  expect((await before.find({ type: 'Text', text: /token count/ }))?.text).toBeDefined()
+  await before.unmount()
+
+  // The engine raises no session.start for what follows a clear, so the end of
+  // the cleared conversation is the only place the pane can empty itself.
+  await $.session.end({ reason: 'clear' })
+
+  const after = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await after.find({ type: 'Text', text: /review the diff/ })).toBe(undefined)
+  expect(await after.find({ type: 'Text', text: /token count/ })).toBe(undefined)
+  expect((await after.find({ type: 'Text', text: /agents · / }))?.text).toContain('0 agents')
+  expect((await after.find({ type: 'Text', text: /no task list/ }))?.text).toBeDefined()
+  await after.unmount()
+})

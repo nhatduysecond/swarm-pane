@@ -467,6 +467,33 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  /**
+   * A `/clear` empties the pane along with the conversation.
+   *
+   * The engine raises no `session.start` for the conversation that follows a
+   * clear: the process goes on under a new session id and the plugin's state
+   * goes with it untouched. So without this the pane would keep drawing the
+   * agents, the tokens and the task list of a conversation that no longer
+   * exists, and nothing in the new one would ever take them off the screen.
+   *
+   * The task list is emptied rather than re-read, because the render reads the
+   * plan folder whenever the list is empty; clearing `planAt` is what lets it
+   * read again at once rather than after the debounce.
+   */
+  on('session.end', { reason: 'clear' }, async ($, e, next) => {
+    await quiet(
+      (async () => {
+        await update($, agents, () => [])
+        await update($, todos, () => [])
+        await update($, todoFrom, () => '')
+        await update($, turnAt, () => 0)
+        await update($, logFor, () => '')
+        await update($, planAt, () => 0)
+      })(),
+    )
+    return next(e)
+  })
+
   on('command.run', { command: 'swarm' }, async $ => {
     await $.ui.open({ id: LOG, title: LOG, columns: 56 })
     await $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
