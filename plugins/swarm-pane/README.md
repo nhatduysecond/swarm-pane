@@ -33,6 +33,24 @@ That file is the only thing this plugin reads. Nothing is sent anywhere: the pan
 draws from the events of your own session, and what it keeps lives in the session's
 own plugin state.
 
+## What the hooks do
+
+Six hooks, listed with what each one reads and whether it changes anything. None
+of them rewrites a prompt, a tool call, a setting, an instruction or a tool
+description, and none denies anything.
+
+| Hook | What it does | Changes |
+|---|---|---|
+| `session.start` | Registers the `/swarm` command, opens the pane, reads the project's `CLAUDE.md` once for risk zones | none; passes through |
+| `command.run` (`swarm`) | Answers the plugin's own `/swarm` command by reopening the pane | answers only its own command; no other command reaches it |
+| `tool.call` (`Agent`) | Reads the description, subagent type, model and effort of a subagent about to start, then times it until the call returns | none; the call runs as written |
+| `agent.spawn` | Keeps the started agent's id so the agent's own tool calls can be counted against it | none; the spawn is passed through untouched and the engine's result is returned as received |
+| `tool.call` (all) | Counts tool calls per agent, and reads `TodoWrite` input to mirror the task list | none; every call is passed through |
+| `ui.render` (`Pane`) | Draws the pane | draws its own pane only |
+
+Bookkeeping failures are swallowed on purpose: a pane one beat out of date is
+better than a blocked tool call.
+
 ## Notes
 
 The elapsed bar is relative to the longest-running live agent, not progress — no
