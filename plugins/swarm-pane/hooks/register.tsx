@@ -251,14 +251,17 @@ export const register: Register = on => {
   })
 
   // Each request of an agent's turn reports what it cost; summing them is the
-  // only live token figure there is. Cache reads are left out: the same prompt
-  // read again is not more work, and counting it would dwarf everything else.
+  // only live token figure there is. All four counts go in, cache reads
+  // included, so the row matches the figure the engine reports for that agent.
   on('turn.step', async function* ($, e, next) {
     const step = yield* next(e)
     const used = step.usage
     if (e.agentId && used) {
       const paid =
-        used.input_tokens + used.output_tokens + used.cache_creation_input_tokens
+        used.input_tokens +
+        used.output_tokens +
+        used.cache_creation_input_tokens +
+        used.cache_read_input_tokens
       await quiet(
         update($, agents, list =>
           list.map(a => (a.id === e.agentId ? { ...a, tok: a.tok + paid } : a)),
@@ -319,6 +322,10 @@ export const register: Register = on => {
     const hiddenDone = doneTasks.length - keptDone.length
     const shown = [...keptDone, ...(tight ? open.slice(0, Math.max(2, room - 10)) : open)]
     const longest = Math.max(1, ...running.map(a => now - a.startedAt))
+    // The section's heading counts every agent that finished; the rows show the
+    // last few, so the ones left out are counted on a line of their own.
+    const kept = finished.slice(tight ? -1 : -2)
+    const hiddenAgents = finished.length - kept.length
     const ink = (a: Agent) => INK[list.indexOf(a) % INK.length]
     const known = await read($, zones)
     const warns = running.map(a => offRule(known, a)).filter(Boolean) as string[]
@@ -390,7 +397,7 @@ export const register: Register = on => {
         <Box>
           <Box flexGrow={1}><Text dimColor>this turn · {fmt(now - turnStart)}</Text></Box>
           <Text dimColor>
-            {running.length} agents · {ktok(running.reduce((n, a) => n + a.tok, 0))} tok
+            {list.length} agents · {ktok(list.reduce((n, a) => n + a.tok, 0))} tok
           </Text>
         </Box>
 
@@ -449,7 +456,10 @@ export const register: Register = on => {
         {gap}
         {head('DONE', `${finished.length}`)}
         {finished.length === 0 && none('nothing finished yet')}
-        {finished.slice(tight ? -1 : -2).map(a => (
+        {hiddenAgents > 0 && (
+          <Text dimColor>  +{hiddenAgents} finished earlier</Text>
+        )}
+        {kept.map(a => (
           <Box flexDirection="column">
             <Box>
               <Text color={OK}>{a.label} </Text>

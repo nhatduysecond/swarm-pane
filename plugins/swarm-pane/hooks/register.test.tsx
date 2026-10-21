@@ -279,7 +279,7 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   on('clock.every', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', () => ({ result: { agentId: 'ag-3' } }))
-  // A cache read is not work done again; only the other three are counted.
+  // All four counts go in, so the row matches what the engine reports.
   on('turn.step', async function* () {
     return {
       turnId: 't1',
@@ -309,9 +309,9 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   for await (const _chunk of stream) void _chunk
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  // 700 + 500 + 11_500 = 12.7k; the 90k cache read is not counted.
-  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('12.7k tok')
-  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('12.7k tok')
+  // 700 + 500 + 11_500 + 90_000 = 102.7k, the engine's own figure for the step.
+  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('102.7k tok')
+  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('102.7k tok')
   await ui.unmount()
 })
 
@@ -374,4 +374,36 @@ test('the stop button and the log tab aim at the same agent', () => {
   expect(aim(known, [done, old, flagged])?.label).toBe('a-02')
   expect(aim(known, [done, old])?.label).toBe('a-01')
   expect(aim(known, [done])).toBe(undefined)
+})
+
+test('the header counts every agent, and DONE accounts for the rows it drops', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  // No agentId: each call ends with itself, so all three land in DONE.
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (const description of ['first errand', 'second errand', 'third errand']) {
+    await $.tool.call({
+      tool: 'Agent',
+      description,
+      prompt: 'x',
+      subagent_type: 'general-purpose',
+      model: 'sonnet',
+      effort: 'medium',
+    })
+  }
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // Three ran, none is running: the header still counts all three.
+  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('3 agents')
+  // Two rows fit; the third is counted rather than silently dropped.
+  expect((await ui.find({ type: 'Text', text: /finished earlier/ }))?.text).toContain('+1')
+  expect((await ui.find({ type: 'Text', text: /third errand/ }))?.text).toContain('third')
+  expect(await ui.find({ type: 'Text', text: /first errand/ })).toBe(undefined)
+  await ui.unmount()
 })

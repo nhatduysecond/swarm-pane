@@ -10,10 +10,9 @@ marked done, running or waiting, and a running line names the agent that owns it
 finished work collapses to one counted line so the open work fills the section.
 Agents that finish drop to a short history so you can still see what they cost.
 
-The token figure is what the agent's own requests paid for — uncached input, cache
-writes and output, summed over its steps. Tokens the prompt cache served are left
-out: the same prompt read again is not more work, and counting it would dwarf
-everything else in the row.
+The token figure is what the agent's own requests cost, summed over its steps:
+input, output and both cache counts, the same four the engine reports, so the row
+can be checked against the figure the agent's own completion gives.
 
 A second tab, `log`, opens beside it and shows the first line of each of the last
 messages of the agent the stop button aims at — the flagged one, else the one
