@@ -1,0 +1,14 @@
+{
+  "name": "swarm-pane",
+  "description": "Pane mods for Claude Code.",
+  "owner": {
+    "name": "Richard Dang"
+  },
+  "plugins": [
+    {
+      "name": "swarm-pane",
+      "source": "./plugins/swarm-pane",
+      "description": "Pane beside the transcript: running subagents with model, effort and elapsed time, plus the session task list."
+    }
+  ]
+}

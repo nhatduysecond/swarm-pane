@@ -1,0 +1,4 @@
+.DS_Store
+
+# Laid by the engine when it loads the plugin; regenerated per build.
+plugins/*/.claude-plugin/types/
