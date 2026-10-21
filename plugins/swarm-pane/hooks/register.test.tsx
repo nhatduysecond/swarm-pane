@@ -633,3 +633,28 @@ test('a small model reads the list when nothing else wrote one', async ($, on) =
   expect((await ui.find({ type: 'Text', text: /1\/3 read/ }))?.text).toContain('read')
   await ui.unmount()
 })
+
+test('finished work is dimmed and the work in hand is not', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [
+      { content: 'the finished one', status: 'completed', activeForm: 'a' },
+      { content: 'the one in hand', status: 'in_progress', activeForm: 'b' },
+      { content: 'the one to come', status: 'pending', activeForm: 'c' },
+    ],
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /finished one/ }))?.props?.dimColor).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /in hand/ }))?.props?.dimColor).toBeFalsy()
+  expect((await ui.find({ type: 'Text', text: /to come/ }))?.props?.dimColor).toBeFalsy()
+  await ui.unmount()
+})

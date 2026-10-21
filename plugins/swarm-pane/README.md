@@ -6,7 +6,8 @@ works: who is running, on what, and with which model.
 Every subagent gets a row with the task it was given, the model and reasoning
 effort it was dispatched with, how long it has been running, and what it has spent
 so far in tokens and tool calls. The session's task list sits above it, each line
-marked done, running or waiting, and a running line names the agent that owns it;
+marked done, running or waiting — finished work dimmed, the line in hand the
+brightest in the section — and a running line names the agent that owns it;
 finished work collapses to one counted line so the open work fills the section.
 Agents that finish drop to a short history so you can still see what they cost.
 

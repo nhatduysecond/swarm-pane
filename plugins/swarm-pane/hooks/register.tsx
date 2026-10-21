@@ -548,31 +548,36 @@ export const register: Register = (on, options) => {
     const owner = (content: string) =>
       running.find(a => content.includes(a.desc) || a.desc.includes(content))
 
-    const row = (
-      mark: string,
-      markInk: string | undefined,
-      text: string,
-      chip?: string,
-      who?: string,
-      whoInk?: string,
-    ) => (
+    /**
+     * One task row. Finished work is dimmed: it reads as the history it is,
+     * and the work in hand is the brightest thing in the section.
+     */
+    const row = (o: {
+      mark: string
+      markInk?: string
+      text: string
+      dim?: boolean
+      chip?: string
+      who?: string
+      whoInk?: string
+    }) => (
       <Box>
         {/* Fixed width: a terminal that draws a mark wide must not shift the
             text of that row, or no two rows line up. */}
         <Box width={4} flexShrink={0}>
-          <Text color={markInk} dimColor={!markInk}>{mark}</Text>
+          <Text color={o.markInk} dimColor={o.markInk === undefined}>{o.mark}</Text>
         </Box>
         <Box flexGrow={1} minWidth={0}>
-          <Text wrap="truncate-end" dimColor={!markInk}>{text}</Text>
+          <Text wrap="truncate-end" dimColor={o.dim}>{o.text}</Text>
         </Box>
         {showChip && (
           <Box width={9} justifyContent="center">
-            {chip ? <Text color={WARN}>{chip}</Text> : <Text> </Text>}
+            {o.chip ? <Text color={WARN}>{o.chip}</Text> : <Text> </Text>}
           </Box>
         )}
         {showWho && (
           <Box width={5} justifyContent="flex-end">
-            {who ? <Text color={whoInk}>{who}</Text> : <Text> </Text>}
+            {o.who ? <Text color={o.whoInk}>{o.who}</Text> : <Text> </Text>}
           </Box>
         )}
       </Box>
@@ -642,7 +647,15 @@ export const register: Register = (on, options) => {
               : t.status === 'in_progress'
                 ? (a ? ink(a) : INK[0])
                 : undefined
-          return row(mark, markInk, t.content, zoneOf(known, t.content), a?.label, a ? ink(a) : undefined)
+          return row({
+            mark,
+            markInk,
+            text: t.content,
+            dim: t.status === 'completed',
+            chip: zoneOf(known, t.content),
+            who: a?.label,
+            whoInk: a ? ink(a) : undefined,
+          })
         })}
 
         {gap}
