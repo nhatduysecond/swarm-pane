@@ -28,7 +28,9 @@ before the pane opened is read back from the session's own transcript when it
 starts, so a pane opened — or a plugin reloaded — mid-session still shows it.
 
 A session with no task list of its own falls back to the repository's own plan:
-the newest folder under `plans/`, whose `- [x]` / `- [ ]` rows become the list,
+the newest dated folder under `plans/` that holds one — three are looked at, so a
+folder of reports or a bare brief does not silence the section — whose `- [x]` and
+`- [ ]` rows become the list,
 reread every ten seconds while the pane is open, with `plan` beside the heading
 to say where it came from. A build whose task tool is absent still shows the work
 the plan names. A subagent that

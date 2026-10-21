@@ -527,7 +527,7 @@ Not a task: - [x] inside a sentence is still a row, a bare - dash is not.
   expect(parsePlan('nothing here')).toEqual([])
 })
 
-test('the pane draws the newest plan folder when the session has no list', async ($, on) => {
+test('the pane draws the newest plan folder that holds a list', async ($, on) => {
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -540,6 +540,9 @@ test('the pane draws the newest plan folder when the session has no list', async
         ? [
             { name: '261020-0900-older', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
             { name: '261021-1530-newest', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+            // Both sort after a date by name, and neither is a plan.
+            { name: 'reports', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+            { name: '_archive', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
           ]
         : [
             { name: 'phase-01-build.md', kind: 'file', size: 10, mtimeMs: 0, isLink: false },
@@ -548,15 +551,19 @@ test('the pane draws the newest plan folder when the session has no list', async
   }))
   on('fs.read', (_, e) => ({
     value: String(e.path).includes('261021-1530-newest')
-      ? '## Todo List\n- [x] built the thing\n- [ ] check the thing\n'
-      : '- [ ] the older plan\n',
+      ? '# Brief\n\nNo checkbox lives here.\n'
+      : String(e.path).includes('reports')
+        ? '- [x] a finding from an old report\n'
+        : '## Todo List\n- [x] built the thing\n- [ ] check the thing\n',
   }))
 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /check the thing/ }))?.text).toContain('check')
-  expect(await ui.find({ type: 'Text', text: /older plan/ })).toBe(undefined)
+  // The newest folder holds only a brief, so the one before it is read; a
+  // report folder is never a plan.
+  expect(await ui.find({ type: 'Text', text: /old report/ })).toBe(undefined)
   // The heading says where the list came from.
   expect((await ui.find({ type: 'Text', text: /1\/2 plan/ }))?.text).toContain('plan')
   await ui.unmount()

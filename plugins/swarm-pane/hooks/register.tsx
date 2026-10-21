@@ -101,21 +101,27 @@ export const parsePlan = (md: string): Todo[] => {
  * project's own convention puts it, newest by name.
  */
 const planOnDisk = async ($: EngineInterface): Promise<Todo[] | undefined> => {
-  const dirs = (await $.fs.list('plans')).filter(d => d.kind === 'dir')
-  const newest = [...dirs].sort((a, b) => (a.name < b.name ? 1 : -1))[0]
-  if (newest === undefined) return undefined
+  // Dated by the convention, so the name orders them. Taking the last name of
+  // any kind would pick `reports/` over every plan in the folder.
+  const dirs = (await $.fs.list('plans')).filter(d => d.kind === 'dir' && /^\d{6}/.test(d.name))
+  // The newest folder may hold only reports or a brief. Three back is far
+  // enough to find the plan in hand, and near enough not to show a stale one.
+  const recent = [...dirs].sort((a, b) => (a.name < b.name ? 1 : -1)).slice(0, 3)
 
-  const here = `plans/${newest.name}`
-  const files = (await $.fs.list(here))
-    .filter(f => f.kind === 'file' && f.name.endsWith('.md'))
-    .sort((a, b) => (a.name < b.name ? -1 : 1))
+  for (const dir of recent) {
+    const here = `plans/${dir.name}`
+    const files = (await $.fs.list(here))
+      .filter(f => f.kind === 'file' && f.name.endsWith('.md'))
+      .sort((a, b) => (a.name < b.name ? -1 : 1))
 
-  const found: Todo[] = []
-  for (const f of files) {
-    found.push(...parsePlan(await $.fs.read(`${here}/${f.name}`)))
-    if (found.length >= 30) break
+    const found: Todo[] = []
+    for (const f of files) {
+      found.push(...parsePlan(await $.fs.read(`${here}/${f.name}`)))
+      if (found.length >= 30) break
+    }
+    if (found.length > 0) return found.slice(0, 30)
   }
-  return found.length > 0 ? found.slice(0, 30) : undefined
+  return undefined
 }
 
 /** Reads the plan on disk into the section, at most once every ten seconds. */
