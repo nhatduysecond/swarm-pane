@@ -21,8 +21,9 @@ then keeps showing after that agent has finished. Three keys work while the pane
 holds the keyboard (`ctrl+x tab`, or a click): `s` stops the agent it names, `t`
 opens the log tab, `c` copies the summary.
 
-Only the main loop's `TodoWrite` fills the task list. A subagent planning its own
-work does not overwrite the session's plan.
+The session's own `TodoWrite` fills the task list and always wins. A subagent that
+plans its own work is drawn only while the session has no plan of its own, with
+the agent's label beside the heading so it is clear whose list it is.
 
 ## Install
 

@@ -33,6 +33,8 @@ declare module 'claude-code' {
       turnAt: number
       /** Whose transcript the log pane draws: an agentId, '' for none. */
       logFor: string
+      /** Who wrote the task list: '' for the main loop, else an agentId. */
+      todoFrom: string
     }
   }
 }

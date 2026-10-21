@@ -342,7 +342,7 @@ test('a TodoWrite fills the task list the pane draws', async ($, on) => {
   await ui.unmount()
 })
 
-test("a subagent's own plan is not the session's task list", async ($, on) => {
+test("a subagent's plan shows until the session has one of its own", async ($, on) => {
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -357,9 +357,25 @@ test("a subagent's own plan is not the session's task list", async ($, on) => {
     todos: [{ content: 'the subagent plan', status: 'in_progress', activeForm: 'planning' }],
   })
 
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /subagent plan/ })).toBe(undefined)
-  expect((await ui.find({ type: 'Text', text: /no task list/ }))?.text).toContain('no task list')
+  // Nothing else is planned, so the subagent's list is better than an empty section.
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /subagent plan/ }))?.text).toContain('subagent plan')
+  await ui.unmount()
+
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [{ content: 'the session plan', status: 'pending', activeForm: 'planning' }],
+  })
+  // The session's own plan takes the section, and a later subagent cannot take it back.
+  await $.tool.call({
+    tool: 'TodoWrite',
+    agentId: 'ag-5',
+    todos: [{ content: 'a second subagent plan', status: 'pending', activeForm: 'planning' }],
+  })
+
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /session plan/ }))?.text).toContain('session plan')
+  expect(await ui.find({ type: 'Text', text: /second subagent/ })).toBe(undefined)
   await ui.unmount()
 })
 

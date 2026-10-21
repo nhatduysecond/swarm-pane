@@ -12,6 +12,7 @@ const tick = atom({ plugin: 'swarm-pane', key: 'tick' } as const, 0)
 const zones = atom({ plugin: 'swarm-pane', key: 'zones' } as const, [])
 const turnAt = atom({ plugin: 'swarm-pane', key: 'turnAt' } as const, 0)
 const logFor = atom({ plugin: 'swarm-pane', key: 'logFor' } as const, '')
+const todoFrom = atom({ plugin: 'swarm-pane', key: 'todoFrom' } as const, '')
 
 /** One colour per agent, shared by its task row and its agent block. */
 let ticking = false
@@ -279,15 +280,22 @@ export const register: Register = on => {
         ),
       )
     }
-    // A subagent plans its own work; the pane shows the session's plan, so only
-    // the main loop's list is mirrored.
-    if (e.tool === 'TodoWrite' && e.agentId === undefined) {
+    if (e.tool === 'TodoWrite') {
       const list = (e as unknown as { todos?: Todo[] }).todos
       if (Array.isArray(list)) {
         await quiet(
-          update($, todos, () =>
-            list.map(t => ({ content: String(t.content ?? ''), status: String(t.status ?? '') })),
-          ),
+          (async () => {
+            // The session's own plan is the one worth showing, so the main loop
+            // always wins. A subagent's plan is drawn, named as its own, only
+            // while the session has none of its own to show.
+            const from = e.agentId ?? ''
+            const held = await read($, todoFrom)
+            if (from !== '' && held === '' && (await read($, todos)).length > 0) return
+            await update($, todos, () =>
+              list.map(t => ({ content: String(t.content ?? ''), status: String(t.status ?? '') })),
+            )
+            await update($, todoFrom, () => from)
+          })(),
         )
       }
     }
@@ -298,6 +306,7 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const list = await read($, agents)
     const tasks = await read($, todos)
+    const plannedBy = await read($, todoFrom)
     await read($, tick)
     const now = await $.clock.now()
     const started = await read($, turnAt)
@@ -401,7 +410,12 @@ export const register: Register = on => {
           </Text>
         </Box>
 
-        {head('TASKS', `${doneTasks.length}/${tasks.length}`)}
+        {head(
+          'TASKS',
+          `${doneTasks.length}/${tasks.length}${
+            plannedBy === '' ? '' : ` ${list.find(a => a.id === plannedBy)?.label ?? 'agent'}`
+          }`,
+        )}
         {tasks.length === 0 && none('no task list in this session')}
         {hiddenDone > 0 && <Text dimColor>[✓] +{hiddenDone} done earlier</Text>}
         {shown.map(t => {
