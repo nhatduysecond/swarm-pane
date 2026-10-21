@@ -75,7 +75,8 @@ export const fmt = (ms: number): string => {
 /** An agent the pane recorded before it counted tokens has none; it reads zero. */
 export const tokOf = (a: Pick<Agent, 'tok'>): number => (Number.isFinite(a.tok) ? a.tok : 0)
 
-export const ktok = (n: number): string => `${(n / 1000).toFixed(1)}k`
+export const ktok = (n: number): string =>
+  n >= 999_950 ? `${(n / 1_000_000).toFixed(1)}M` : `${(n / 1000).toFixed(1)}k`
 
 /** Wraps on word boundaries; the pane draws each line beside its own bar. */
 export const wrap = (text: string, width: number): string[] => {

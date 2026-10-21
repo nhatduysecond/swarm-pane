@@ -81,6 +81,10 @@ test('tokens read as thousands, and a warning wraps to the pane', () => {
   expect(ktok(0)).toBe('0.0k')
   expect(ktok(400)).toBe('0.4k')
   expect(ktok(12_700)).toBe('12.7k')
+  // A long run reads in millions rather than four digits of thousands.
+  expect(ktok(1_240_000)).toBe('1.2M')
+  expect(ktok(999_949)).toBe('999.9k')
+  expect(ktok(999_950)).toBe('1.0M')
 
   const lines = wrap('a-04 works on checkout with haiku, the rule asks sonnet', 24)
   expect(lines.every(l => l.length <= 24)).toBe(true)
