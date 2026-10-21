@@ -14,6 +14,8 @@ export type Agent = {
   startedAt: number
   endedAt?: number
   tools: number
+  /** Tokens its own requests paid for: uncached input, cache writes, output. */
+  tok: number
 }
 
 export type Todo = { content: string; status: string }
@@ -23,6 +25,14 @@ export type Zone = { label: string; terms: string[] }
 
 declare module 'claude-code' {
   interface PluginState {
-    'swarm-pane': { agents: Agent[]; todos: Todo[]; tick: number; zones: Zone[]; turnAt: number }
+    'swarm-pane': {
+      agents: Agent[]
+      todos: Todo[]
+      tick: number
+      zones: Zone[]
+      turnAt: number
+      /** Whose transcript the log pane draws: an agentId, '' for none. */
+      logFor: string
+    }
   }
 }

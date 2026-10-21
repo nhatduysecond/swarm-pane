@@ -4,12 +4,14 @@ import type { Register } from 'claude-code'
 import type { Agent, Todo, Zone } from '../types'
 
 const PANE = 'swarm'
+const LOG = 'log'
 
 const agents = atom({ plugin: 'swarm-pane', key: 'agents' } as const, [])
 const todos = atom({ plugin: 'swarm-pane', key: 'todos' } as const, [])
 const tick = atom({ plugin: 'swarm-pane', key: 'tick' } as const, 0)
 const zones = atom({ plugin: 'swarm-pane', key: 'zones' } as const, [])
 const turnAt = atom({ plugin: 'swarm-pane', key: 'turnAt' } as const, 0)
+const logFor = atom({ plugin: 'swarm-pane', key: 'logFor' } as const, '')
 
 /** One colour per agent, shared by its task row and its agent block. */
 let ticking = false
@@ -67,6 +69,23 @@ export const offRule = (zones: readonly Zone[], a: Agent): string | undefined =>
 export const fmt = (ms: number): string => {
   const s = Math.max(0, Math.round(ms / 1000))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+export const ktok = (n: number): string => `${(n / 1000).toFixed(1)}k`
+
+/** Wraps on word boundaries; the pane draws each line beside its own bar. */
+export const wrap = (text: string, width: number): string[] => {
+  const out: string[] = []
+  let line = ''
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const next = line === '' ? word : `${line} ${word}`
+    if (next.length > width && line !== '') {
+      out.push(line)
+      line = word
+    } else line = next
+  }
+  if (line !== '') out.push(line)
+  return out.length > 0 ? out : ['']
 }
 
 /** Grey bar: elapsed against the longest-running live agent. Not progress. */
@@ -134,6 +153,7 @@ export const register: Register = on => {
       effort: input.effort ?? 'medium',
       startedAt: now,
       tools: 0,
+      tok: 0,
     }
     await quiet(
       update($, agents, list => [
@@ -209,6 +229,24 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Each request of an agent's turn reports what it cost; summing them is the
+  // only live token figure there is. Cache reads are left out: the same prompt
+  // read again is not more work, and counting it would dwarf everything else.
+  on('turn.step', async function* ($, e, next) {
+    const step = yield* next(e)
+    const used = step.usage
+    if (e.agentId && used) {
+      const paid =
+        used.input_tokens + used.output_tokens + used.cache_creation_input_tokens
+      await quiet(
+        update($, agents, list =>
+          list.map(a => (a.id === e.agentId ? { ...a, tok: a.tok + paid } : a)),
+        ),
+      )
+    }
+    return step
+  })
+
   on('tool.call', async ($, e, next) => {
     if (e.agentId) {
       await quiet(
@@ -252,7 +290,11 @@ export const register: Register = on => {
     const finished = list.filter(a => a.endedAt !== undefined)
     const doneTasks = tasks.filter(t => t.status === 'completed')
     const open = tasks.filter(t => t.status !== 'completed')
-    const shown = tight ? open.slice(0, Math.max(2, room - 9)) : tasks
+    // Finished work is history: the last two stay for context, the rest become
+    // one counted line so the open work is what fills the section.
+    const keptDone = doneTasks.slice(tight ? doneTasks.length : -2)
+    const hiddenDone = doneTasks.length - keptDone.length
+    const shown = [...keptDone, ...(tight ? open.slice(0, Math.max(2, room - 10)) : open)]
     const longest = Math.max(1, ...running.map(a => now - a.startedAt))
     const ink = (a: Agent) => INK[list.indexOf(a) % INK.length]
     const known = await read($, zones)
@@ -288,8 +330,8 @@ export const register: Register = on => {
       </Box>
     )
 
-    // The pane keeps one shape: four sections, always drawn, counts beside each
-    // heading. Only what sits under a heading changes while a session runs.
+    // The pane keeps one shape: three sections, always drawn, counts beside
+    // each heading. Only what sits under a heading changes while a session runs.
     const gap = <Text> </Text>
     const head = (title: string, count: string) => (
       <Box>
@@ -305,9 +347,15 @@ export const register: Register = on => {
     const target = (flagged ?? [...running].sort((x, y) => x.startedAt - y.startedAt)[0])
     const summary = [
       `${doneTasks.length}/${tasks.length} tasks`,
-      ...running.map(a => `${a.label} ${a.desc} · ${a.model} · ${a.effort} · ${fmt(now - a.startedAt)}`),
+      ...running.map(
+        a =>
+          `${a.label} ${a.desc} · ${a.model} · ${a.effort} · ${fmt(now - a.startedAt)} · ${ktok(a.tok)} tok`,
+      ),
       ...warns.map(wn => `! ${wn}`),
     ].join('\n')
+    const alertLines = warns.flatMap(wn =>
+      wrap(`⚠ ${wn}`, Math.max(12, w - 4)).map((text, i) => ({ text, lead: i === 0 })),
+    )
 
     return (
       <Box flexDirection="column">
@@ -321,15 +369,13 @@ export const register: Register = on => {
         <Box>
           <Box flexGrow={1}><Text dimColor>this turn · {fmt(now - turnStart)}</Text></Box>
           <Text dimColor>
-            {list.length} agents · {list.reduce((n, a) => n + a.tools, 0)} tools
+            {running.length} agents · {ktok(running.reduce((n, a) => n + a.tok, 0))} tok
           </Text>
         </Box>
 
         {head('TASKS', `${doneTasks.length}/${tasks.length}`)}
         {tasks.length === 0 && none('no task list in this session')}
-        {tight && doneTasks.length > 0 && (
-          <Text dimColor>[✓] +{doneTasks.length} done earlier</Text>
-        )}
+        {hiddenDone > 0 && <Text dimColor>[✓] +{hiddenDone} done earlier</Text>}
         {shown.map(t => {
           const a = t.status === 'in_progress' ? owner(t.content) : undefined
           const mark =
@@ -359,29 +405,44 @@ export const register: Register = on => {
                 <Text color={ink(a)}>{fmt(now - a.startedAt)}</Text>
               </Box>
               <Text dimColor>
-                {stack ? `${a.model} · ${a.effort}` : `${a.type} · ${a.tools} tools`}
+                {stack ? `${a.model} · ${a.effort}` : `${ktok(a.tok)} tok · ${a.tools} tools`}
+              </Text>
+            </Box>
+          </Box>
+        ))}
+
+        {/* A warning belongs beside the agent that raised it, not in a section
+            of its own: the bar marks it off without costing a heading row. */}
+        {alertLines.length > 0 && gap}
+        {alertLines.map(line => (
+          <Box>
+            <Text color={WARN}>▌ </Text>
+            <Box flexGrow={1} minWidth={0}>
+              <Text color={WARN} wrap="truncate-end">
+                {line.lead ? line.text : `  ${line.text}`}
               </Text>
             </Box>
           </Box>
         ))}
 
         {gap}
-        {head('ALERTS', `${warns.length}`)}
-        {warns.length === 0 && none(known.length === 0 ? 'no risk zones declared' : 'nothing flagged')}
-        {warns.map(wn => (
-          <Text color={WARN} wrap="truncate-end">⚠ {wn}</Text>
-        ))}
-
-        {gap}
         {head('DONE', `${finished.length}`)}
         {finished.length === 0 && none('nothing finished yet')}
         {finished.slice(tight ? -1 : -2).map(a => (
-          <Box>
-            <Text color={OK}>{a.label} </Text>
-            <Box flexGrow={1} minWidth={0}><Text dimColor wrap="truncate-end">{a.desc}</Text></Box>
-            <Text dimColor>
-              {' '}{a.model} · {a.effort}{showChip ? ` · ${fmt((a.endedAt ?? 0) - a.startedAt)}` : ''}
-            </Text>
+          <Box flexDirection="column">
+            <Box>
+              <Text color={OK}>{a.label} </Text>
+              <Box flexGrow={1} minWidth={0}><Text dimColor wrap="truncate-end">{a.desc}</Text></Box>
+              {!stack && <Text dimColor> {a.model} · {a.effort}</Text>}
+            </Box>
+            <Box paddingLeft={stack ? 0 : 5}>
+              <Box flexGrow={1}>
+                <Text dimColor>{fmt((a.endedAt ?? 0) - a.startedAt)}</Text>
+              </Box>
+              <Text dimColor>
+                {stack ? `${a.model} · ${a.effort}` : `${ktok(a.tok)} tok · ${a.tools} tools`}
+              </Text>
+            </Box>
           </Box>
         ))}
 
@@ -404,6 +465,19 @@ export const register: Register = on => {
             />
           )}
           <Button
+            hotkey="t"
+            label="t open transcript"
+            onPress={async () => {
+              const id = target?.id
+              if (id === undefined) {
+                $.ui.toast('no agent to follow')
+                return
+              }
+              await quiet(update($, logFor, () => id))
+              void $.ui.open({ id: LOG, title: LOG, columns: 56 })
+            }}
+          />
+          <Button
             hotkey="c"
             label="c copy summary"
             onPress={press => {
@@ -412,6 +486,49 @@ export const register: Register = on => {
           />
         </Box>
         <Text dimColor>Tab into the pane · arrows scroll · Enter presses</Text>
+      </Box>
+    )
+  })
+
+  // The log tab: what the agent the stop button aims at has been saying.
+  on('ui.render', { component: 'Pane', requestId: LOG }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const id = await read($, logFor)
+    await read($, tick)
+    const one = (await read($, agents)).find(a => a.id === id)
+    const room = e.props.scroll?.bodyRows ?? 24
+    const found = id === '' ? [] : await $.session.messages({ agentId: id })
+    const said = Array.isArray(found) ? found.slice(-Math.max(4, room - 3)) : []
+
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text bold color={INK[0]}>{one?.label ?? '--'} </Text>
+          <Box flexGrow={1} minWidth={0}>
+            <Text wrap="truncate-end">{one?.desc ?? 'press t in the swarm pane'}</Text>
+          </Box>
+        </Box>
+        {said.length === 0 && (
+          <Text dimColor>
+            {'deny' in (found as object)
+              ? 'no transcript is kept for this agent'
+              : 'nothing said yet'}
+          </Text>
+        )}
+        {said.map(m => {
+          const tools = m.toolUses.map(u => u.tool).join(', ')
+          const line = m.text.split('\n').find(l => l.trim() !== '') ?? tools
+          return (
+            <Box>
+              <Text dimColor>{m.role === 'user' ? '› ' : '‹ '}</Text>
+              <Box flexGrow={1} minWidth={0}>
+                <Text dimColor={m.role === 'user'} wrap="truncate-end">
+                  {line === '' ? '(thinking)' : line}
+                </Text>
+              </Box>
+            </Box>
+          )
+        })}
       </Box>
     )
   })

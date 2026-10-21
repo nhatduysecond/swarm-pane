@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bar, fmt, offRule, parseZones, zoneOf } from './register'
+import { bar, fmt, ktok, offRule, parseZones, wrap, zoneOf } from './register'
 
 const PANE = {
   plugin: 'swarm-pane',
@@ -72,6 +72,19 @@ test('the clock and the grey bar', () => {
   expect(bar(0, 100, 8)).toBe('░░░░░░░░')
   // Khong co agent nao song thi khong chia cho 0.
   expect(bar(50, 0, 8)).toBe('░░░░░░░░')
+})
+
+test('tokens read as thousands, and a warning wraps to the pane', () => {
+  expect(ktok(0)).toBe('0.0k')
+  expect(ktok(400)).toBe('0.4k')
+  expect(ktok(12_700)).toBe('12.7k')
+
+  const lines = wrap('a-04 works on checkout with haiku, the rule asks sonnet', 24)
+  expect(lines.every(l => l.length <= 24)).toBe(true)
+  expect(lines.join(' ')).toBe('a-04 works on checkout with haiku, the rule asks sonnet')
+  // A word longer than the width is not cut in half; it gets its own line.
+  expect(wrap('supercalifragilistic x', 8)).toEqual(['supercalifragilistic', 'x'])
+  expect(wrap('', 8)).toEqual([''])
 })
 
 test('the pane lists an agent with its model and effort', async ($, on) => {
@@ -157,7 +170,7 @@ test('an agent that reports no agentId closes when its call returns', async ($, 
   await ui.unmount()
 })
 
-test('the four headings stay on an empty session', async ($, on) => {
+test('the three headings stay on an empty session', async ($, on) => {
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -168,7 +181,7 @@ test('the four headings stay on an empty session', async ($, on) => {
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   // Nothing has happened yet: the shape is the same, only the rows under it differ.
-  for (const heading of ['TASKS', 'RUNNING', 'ALERTS', 'DONE']) {
+  for (const heading of ['TASKS', 'RUNNING', 'DONE']) {
     expect((await ui.find({ type: 'Text', text: new RegExp(`^${heading}\\s*$`) }))?.text).toContain(heading)
   }
   expect((await ui.find({ type: 'Text', text: /no agent running/ }))?.text).toContain('no agent')
@@ -202,5 +215,96 @@ test('an agent whose call reports an agentId stays in RUNNING', async ($, on) =>
     .toContain('nothing finished')
   expect((await ui.find({ type: 'Text', text: /review the pane code/ }))?.text)
     .toContain('review the pane code')
+  await ui.unmount()
+})
+
+test('a flagged agent raises a bar under the running list, not a section', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('fs.read', () => ({ value: SAMPLE }))
+  on('tool.call', () => ({ result: { agentId: 'ag-9' } }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'Agent',
+    description: 'stripe webhook retry',
+    prompt: 'x',
+    subagent_type: 'general-purpose',
+    model: 'haiku',
+    effort: 'low',
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /⚠/ }))?.text).toContain('⚠')
+  expect((await ui.find({ type: 'Text', text: /▌/ }))?.text).toContain('▌')
+  // The warning sits beside its agent; no heading of its own is drawn.
+  expect(await ui.find({ type: 'Text', text: /^ALERTS\s*$/ })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('the log tab says what to press while it follows no agent', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  const ui = await $.ui.mount({
+    ...PANE,
+    surface: 'terminal',
+    requestId: 'log',
+    props: { ...PANE.props, title: 'log' },
+  })
+  expect((await ui.find({ type: 'Text', text: /press t/ }))?.text).toContain('swarm pane')
+  await ui.unmount()
+})
+
+test('an agent carries the tokens its own steps paid for', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: { agentId: 'ag-3' } }))
+  // A cache read is not work done again; only the other three are counted.
+  on('turn.step', async function* () {
+    return {
+      turnId: 't1',
+      index: 0,
+      answer: '',
+      toolUses: [],
+      stopReason: 'tool_use',
+      usage: {
+        input_tokens: 700,
+        output_tokens: 500,
+        cache_creation_input_tokens: 11_500,
+        cache_read_input_tokens: 90_000,
+        model: 'sonnet',
+      },
+    }
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'Agent',
+    description: 'dev check C2',
+    prompt: 'x',
+    subagent_type: 'general-purpose',
+    model: 'sonnet',
+    effort: 'medium',
+  })
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'sonnet', messageCount: 4, agentId: 'ag-3' })
+  for await (const _chunk of stream) void _chunk
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // 700 + 500 + 11_500 = 12.7k; the 90k cache read is not counted.
+  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('12.7k tok')
+  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('12.7k tok')
   await ui.unmount()
 })
