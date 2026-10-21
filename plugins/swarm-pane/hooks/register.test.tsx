@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bar, fmt, ktok, offRule, parseZones, wrap, zoneOf } from './register'
+import { aim, bar, fmt, ktok, offRule, parseZones, wrap, zoneOf } from './register'
 
 const PANE = {
   plugin: 'swarm-pane',
@@ -313,4 +313,65 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('12.7k tok')
   expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('12.7k tok')
   await ui.unmount()
+})
+
+test('a TodoWrite fills the task list the pane draws', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('fs.read', () => ({ value: SAMPLE }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [
+      { content: 'read the README', status: 'completed', activeForm: 'reading' },
+      { content: 'check the refund path', status: 'in_progress', activeForm: 'checking' },
+      { content: 'write up the gaps', status: 'pending', activeForm: 'writing' },
+    ],
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /TASKS/ }))?.text).toContain('TASKS')
+  expect((await ui.find({ type: 'Text', text: /refund path/ }))?.text).toContain('refund')
+  // A task touching a declared zone carries its chip.
+  expect((await ui.find({ type: 'Text', text: /^checkou$/ }))?.text).toBe('checkou')
+  await ui.unmount()
+})
+
+test("a subagent's own plan is not the session's task list", async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'TodoWrite',
+    agentId: 'ag-5',
+    todos: [{ content: 'the subagent plan', status: 'in_progress', activeForm: 'planning' }],
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /subagent plan/ })).toBe(undefined)
+  expect((await ui.find({ type: 'Text', text: /no task list/ }))?.text).toContain('no task list')
+  await ui.unmount()
+})
+
+test('the stop button and the log tab aim at the same agent', () => {
+  const known = parseZones(SAMPLE)
+  const base = { callId: 'c', type: 'general-purpose', effort: 'medium', tools: 0, tok: 0 }
+  const old = { ...base, label: 'a-01', desc: 'tidy the readme', model: 'sonnet', startedAt: 10 }
+  const flagged = { ...base, label: 'a-02', desc: 'refund rounding', model: 'haiku', startedAt: 50 }
+  const done = { ...base, label: 'a-03', desc: 'older still', model: 'opus', startedAt: 1, endedAt: 2 }
+
+  // Longest-running while nothing is flagged; a finished agent is never aimed at.
+  expect(aim(known, [done, old, flagged])?.label).toBe('a-02')
+  expect(aim(known, [done, old])?.label).toBe('a-01')
+  expect(aim(known, [done])).toBe(undefined)
 })

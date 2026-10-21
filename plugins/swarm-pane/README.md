@@ -15,8 +15,15 @@ writes and output, summed over its steps. Tokens the prompt cache served are lef
 out: the same prompt read again is not more work, and counting it would dwarf
 everything else in the row.
 
-A second tab, `log`, opens beside it and shows the last messages of the agent the
-stop button aims at; `t` brings that tab forward and pins it to that agent.
+A second tab, `log`, opens beside it and shows the first line of each of the last
+messages of the agent the stop button aims at — the flagged one, else the one
+running longest. `t` brings that tab forward and pins it to that agent, which it
+then keeps showing after that agent has finished. Three keys work while the pane
+holds the keyboard (`ctrl+x tab`, or a click): `s` stops the agent it names, `t`
+opens the log tab, `c` copies the summary.
+
+Only the main loop's `TodoWrite` fills the task list. A subagent planning its own
+work does not overwrite the session's plan.
 
 ## Install
 
@@ -41,25 +48,30 @@ rows touching a zone get a label, and an agent sent into one on `haiku` or at
 stop it. The warning is drawn beside the running list, under a bar, rather than in
 a section of its own.
 
-That file is the only thing this plugin reads. Nothing is sent anywhere: the pane
-draws from the events of your own session, and what it keeps lives in the session's
-own plugin state.
+`CLAUDE.md` is the only file this plugin reads. The rest of what it draws comes
+from your own session: the events it hooks, and — for the log tab alone — the
+messages of the subagent that tab follows, read back through the session. Nothing
+is sent anywhere, and what the pane keeps lives in the session's own plugin state.
 
 ## What the hooks do
 
-Seven hooks, listed with what each one reads and whether it changes anything. None
-of them rewrites a prompt, a tool call, a setting, an instruction or a tool
-description, and none denies anything.
+Nine handlers, listed with what each one reads and whether it changes anything.
+None of them rewrites a prompt, a tool call, a setting, an instruction or a tool
+description, and none denies anything. Two write something of their own, both on a
+press: the stop button ends the agent's turn, and the warning raises a toast.
 
 | Hook | What it does | Changes |
 |---|---|---|
 | `session.start` | Registers the `/swarm` command, opens the pane, reads the project's `CLAUDE.md` once for risk zones | none; passes through |
 | `command.run` (`swarm`) | Answers the plugin's own `/swarm` command by reopening the pane | answers only its own command; no other command reaches it |
-| `tool.call` (`Agent`) | Reads the description, subagent type, model and effort of a subagent about to start, then times it until the call returns | none; the call runs as written |
+| `tool.call` (`Agent`) | Reads the description, subagent type, model and effort of a subagent about to start, and raises the toast when it breaks the rule | none; the call runs as written, and a failure of this bookkeeping is swallowed before it |
 | `agent.spawn` | Keeps the started agent's id so the agent's own tool calls can be counted against it | none; the spawn is passed through untouched and the engine's result is returned as received |
 | `tool.call` (all) | Counts tool calls per agent, and reads `TodoWrite` input to mirror the task list | none; every call is passed through |
+| `turn.start` | Keeps the turn's clock, and the id of a subagent's turn, which the stop button ends | none; passes through |
+| `turn.complete` | Ends a subagent's run, which is what moves it to DONE | none; passes through |
 | `turn.step` | Reads what each of an agent's model requests cost, to keep its token figure | none; the stream is passed through chunk for chunk |
-| `ui.render` (`Pane`) | Draws the pane and, on `t`, the `log` tab from the agent's own messages | draws its own panes only |
+| `ui.render` (`swarm`) | Draws the pane | draws its own pane; the stop button ends that agent's turn |
+| `ui.render` (`log`) | Draws the log tab from the followed agent's own messages | draws its own pane only |
 
 Bookkeeping failures are swallowed on purpose: a pane one beat out of date is
 better than a blocked tool call.
@@ -68,7 +80,10 @@ better than a blocked tool call.
 
 The elapsed bar is relative to the longest-running live agent, not progress — no
 such number exists. The model and effort of an agent are never dropped, however
-narrow the pane gets; the optional columns go first.
+narrow the pane gets; the optional columns go first — the zone chip under 52
+columns, the owning agent under 38, and the token and tool figures under 46, where
+model and effort take that line instead. A call that names no model or effort is
+drawn, and judged, as `inherit` and `medium`.
 
 ## Licence
 

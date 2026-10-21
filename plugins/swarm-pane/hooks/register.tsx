@@ -97,6 +97,18 @@ export const bar = (ms: number, longest: number, w = 8): string => {
 
 const live = (list: readonly Agent[]) => list.filter(a => a.endedAt === undefined)
 
+/**
+ * The agent the stop button aims at, and the one the log tab follows unpinned:
+ * the flagged one, else the one that has been running longest.
+ */
+export const aim = (known: readonly Zone[], list: readonly Agent[]): Agent | undefined => {
+  const running = live(list)
+  return (
+    running.find(a => offRule(known, a) !== undefined) ??
+    [...running].sort((x, y) => x.startedAt - y.startedAt)[0]
+  )
+}
+
 /** The pane's bookkeeping must never break a real tool call. */
 const quiet = async (work: Promise<unknown>): Promise<void> => {
   try {
@@ -148,30 +160,34 @@ export const register: Register = on => {
       model?: string
       effort?: string
     }
-    const now = await $.clock.now()
-    const one: Agent = {
-      label: '',
-      callId: e.tool_use_id,
-      desc: input.description ?? 'agent',
-      type: input.subagent_type ?? 'general-purpose',
-      model: input.model ?? 'inherit',
-      effort: input.effort ?? 'medium',
-      startedAt: now,
-      tools: 0,
-      tok: 0,
-    }
-    await quiet(
-      update($, agents, list => [
+    // Everything before the call is bookkeeping, the clock and the toast
+    // included: none of it may be what stops a real Agent call from running.
+    let one: Agent | undefined
+    try {
+      one = {
+        label: '',
+        callId: e.tool_use_id,
+        desc: input.description ?? 'agent',
+        type: input.subagent_type ?? 'general-purpose',
+        model: input.model ?? 'inherit',
+        effort: input.effort ?? 'medium',
+        startedAt: await $.clock.now(),
+        tools: 0,
+        tok: 0,
+      }
+      const started = one
+      await update($, agents, list => [
         ...list,
-        { ...one, label: `a-${String(list.length + 1).padStart(2, '0')}` },
-      ]),
-    )
-
-    const known = await read($, zones)
-    const warn = offRule(known, one)
-    if (warn) $.ui.toast(`⚠ ${warn}`)
+        { ...started, label: `a-${String(list.length + 1).padStart(2, '0')}` },
+      ])
+      const warn = offRule(await read($, zones), started)
+      if (warn) $.ui.toast(`⚠ ${warn}`)
+    } catch {
+      // a pane one beat out of date beats blocking the user's command
+    }
 
     const ran = await next(e)
+    if (one === undefined) return ran
 
     // The call returns the moment a background agent launches, and its record
     // carries the agentId. Taking it here, rather than waiting for the
@@ -260,7 +276,9 @@ export const register: Register = on => {
         ),
       )
     }
-    if (e.tool === 'TodoWrite') {
+    // A subagent plans its own work; the pane shows the session's plan, so only
+    // the main loop's list is mirrored.
+    if (e.tool === 'TodoWrite' && e.agentId === undefined) {
       const list = (e as unknown as { todos?: Todo[] }).todos
       if (Array.isArray(list)) {
         await quiet(
@@ -347,9 +365,7 @@ export const register: Register = on => {
     )
     const none = (what: string) => <Text dimColor>  {what}</Text>
 
-    // The stop button aims at the flagged agent, else the one running longest.
-    const flagged = running.find(a => offRule(known, a) !== undefined)
-    const target = (flagged ?? [...running].sort((x, y) => x.startedAt - y.startedAt)[0])
+    const target = aim(known, list)
     const summary = [
       `${doneTasks.length}/${tasks.length} tasks`,
       ...running.map(
@@ -485,7 +501,9 @@ export const register: Register = on => {
             }}
           />
         </Box>
-        <Text dimColor>Tab into the pane · arrows scroll · Enter presses</Text>
+        <Text dimColor wrap="truncate-end">
+          ctrl+x tab takes the pane · Tab walks the tabs · Enter presses
+        </Text>
       </Box>
     )
   })
@@ -496,9 +514,9 @@ export const register: Register = on => {
     await read($, tick)
     const list = await read($, agents)
     const pinned = await read($, logFor)
-    // With nothing pinned the tab follows the first agent still running, so it
-    // has something to show before anyone presses anything.
-    const one = list.find(a => a.id === pinned) ?? live(list).find(a => a.id !== undefined)
+    // With nothing pinned the tab follows the agent the stop button aims at, so
+    // it has something to show before anyone presses anything.
+    const one = list.find(a => a.id === pinned) ?? aim(await read($, zones), list)
     const id = one?.id ?? ''
     const room = e.props.scroll?.bodyRows ?? 24
     const found = id === '' ? [] : await $.session.messages({ agentId: id })
