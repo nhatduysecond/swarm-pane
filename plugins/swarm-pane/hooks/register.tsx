@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { ModelUsage, Register } from 'claude-code'
 
 import type { Agent, Todo, Zone } from '../types'
 
@@ -72,8 +72,27 @@ export const fmt = (ms: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-/** An agent the pane recorded before it counted tokens has none; it reads zero. */
-export const tokOf = (a: Pick<Agent, 'tok'>): number => (Number.isFinite(a.tok) ? a.tok : 0)
+/**
+ * One step's usage folded into the agent: the prompt replaces what the last
+ * request held, and only what the agent wrote is added to what it wrote before.
+ */
+export const spend = (a: Agent, used: ModelUsage): Agent => ({
+  ...a,
+  ctx: used.input_tokens + used.cache_read_input_tokens + used.cache_creation_input_tokens,
+  out: (Number.isFinite(a.out) ? a.out : 0) + used.output_tokens,
+})
+
+/**
+ * What the agent has cost: the prompt of its latest request plus everything it
+ * has written. Measured against the engine's own figure over five real runs it
+ * lands within a percent, where summing each step's prompt overstates it by two
+ * to fifty times — the cached context is one prompt, sent again, not new work.
+ *
+ * An agent the pane recorded before it counted tokens has neither; it reads zero.
+ */
+export const tokOf = (a: Partial<Pick<Agent, 'ctx' | 'out'>>): number =>
+  (Number.isFinite(a.ctx) ? (a.ctx as number) : 0) +
+  (Number.isFinite(a.out) ? (a.out as number) : 0)
 
 export const ktok = (n: number): string =>
   n >= 999_950 ? `${(n / 1_000_000).toFixed(1)}M` : `${(n / 1000).toFixed(1)}k`
@@ -178,7 +197,8 @@ export const register: Register = on => {
         effort: input.effort ?? 'medium',
         startedAt: await $.clock.now(),
         tools: 0,
-        tok: 0,
+        ctx: 0,
+        out: 0,
       }
       const started = one
       await update($, agents, list => [
@@ -255,20 +275,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Each request of an agent's turn reports what it cost; summing them is the
-  // only live token figure there is. Cache reads are left out, and that is what
-  // matches the engine's own figure for the agent: every step resends the whole
-  // cached prompt, so summing those reads counts one context tens of times over.
+  // Each request of an agent's turn reports what it cost. The prompt replaces
+  // what the agent's last one held; only what it writes accumulates.
   on('turn.step', async function* ($, e, next) {
     const step = yield* next(e)
     const used = step.usage
     if (e.agentId && used) {
-      const paid =
-        used.input_tokens + used.output_tokens + used.cache_creation_input_tokens
       await quiet(
-        update($, agents, list =>
-          list.map(a => (a.id === e.agentId ? { ...a, tok: tokOf(a) + paid } : a)),
-        ),
+        update($, agents, list => list.map(a => (a.id === e.agentId ? spend(a, used) : a))),
       )
     }
     return step

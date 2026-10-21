@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { aim, bar, fmt, ktok, offRule, parseZones, tokOf, wrap, zoneOf } from './register'
+import { aim, bar, fmt, ktok, offRule, parseZones, spend, tokOf, wrap, zoneOf } from './register'
 
 const PANE = {
   plugin: 'swarm-pane',
@@ -76,8 +76,8 @@ test('the clock and the grey bar', () => {
 
 test('tokens read as thousands, and a warning wraps to the pane', () => {
   // An agent recorded before the pane counted tokens must not poison the total.
-  expect(tokOf({ tok: undefined as unknown as number })).toBe(0)
-  expect(tokOf({ tok: 1_200 })).toBe(1_200)
+  expect(tokOf({})).toBe(0)
+  expect(tokOf({ ctx: 1_000, out: 200 })).toBe(1_200)
   expect(ktok(0)).toBe('0.0k')
   expect(ktok(400)).toBe('0.4k')
   expect(ktok(12_700)).toBe('12.7k')
@@ -286,7 +286,6 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   on('clock.every', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', () => ({ result: { agentId: 'ag-3' } }))
-  // The cache read is left out; what remains is the engine's own figure.
   on('turn.step', async function* () {
     return {
       turnId: 't1',
@@ -316,10 +315,9 @@ test('an agent carries the tokens its own steps paid for', async ($, on) => {
   for await (const _chunk of stream) void _chunk
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  // 700 + 500 + 11_500 = 12.7k. Summing the 90k read at every step would count
-  // one cached context dozens of times over and run to millions.
-  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('12.7k tok')
-  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('12.7k tok')
+  // The whole prompt, 102.2k, plus the 500 it wrote.
+  expect((await ui.find({ type: 'Text', text: /tok · / }))?.text).toContain('102.7k tok')
+  expect((await ui.find({ type: 'Text', text: /agents · / }))?.text).toContain('102.7k tok')
   await ui.unmount()
 })
 
@@ -430,4 +428,31 @@ test('the header counts every agent, and DONE accounts for the rows it drops', a
   expect((await ui.find({ type: 'Text', text: /third errand/ }))?.text).toContain('third')
   expect(await ui.find({ type: 'Text', text: /first errand/ })).toBe(undefined)
   await ui.unmount()
+})
+
+test('a step replaces the prompt and adds only what was written', () => {
+  const one = {
+    label: 'a-01', callId: 'c', desc: 'x', type: 'general-purpose',
+    model: 'sonnet', effort: 'medium', startedAt: 0, tools: 0, ctx: 0, out: 0,
+  }
+  const first = spend(one, {
+    input_tokens: 700, output_tokens: 500,
+    cache_creation_input_tokens: 11_500, cache_read_input_tokens: 90_000,
+  })
+  expect(tokOf(first)).toBe(102_700)
+
+  // The same context, read again, is the same prompt: the figure follows the
+  // latest prompt plus every answer, never the prompts added together.
+  const second = spend(first, {
+    input_tokens: 500, output_tokens: 400,
+    cache_creation_input_tokens: 8_000, cache_read_input_tokens: 103_000,
+  })
+  expect(tokOf(second)).toBe(112_400)
+  expect(ktok(tokOf(second))).toBe('112.4k')
+
+  // An agent recorded before the pane counted tokens starts from zero.
+  expect(tokOf(spend({ ...one, out: undefined as unknown as number }, {
+    input_tokens: 10, output_tokens: 20,
+    cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
+  }))).toBe(30)
 })

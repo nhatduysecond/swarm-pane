@@ -14,8 +14,10 @@ export type Agent = {
   startedAt: number
   endedAt?: number
   tools: number
-  /** Tokens its own requests paid for: uncached input, cache writes, output. */
-  tok: number
+  /** Its latest request's whole prompt: input, cache read and cache write. */
+  ctx: number
+  /** Every token it has written, summed over its steps. */
+  out: number
 }
 
 export type Todo = { content: string; status: string }
