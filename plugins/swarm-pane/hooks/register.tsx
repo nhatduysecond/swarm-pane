@@ -425,6 +425,10 @@ export const register: Register = (on, options) => {
   // own background. A theme key follows the person's light or dark theme; a hex
   // does not, which is why neither is chosen here.
   const headInk = String(options?.heading ?? 'subtle')
+  // The heading's letters. Empty reads as 'inverseText' over a bar, and as the
+  // terminal's own foreground once the bar is off, so neither case needs a
+  // colour chosen for one theme.
+  const headTxt = String(options?.headingText ?? '')
   const paneInk = String(options?.background ?? '')
   // 'auto' switches the renderer once so the pane is a sidebar rather than a
   // block above the prompt; 'off' leaves the person's own renderer alone.
@@ -755,21 +759,24 @@ export const register: Register = (on, options) => {
     // The rule after the title, or the rest of the bar, is the same measure.
     const restOf = (title: string, count: string) =>
       Math.max(0, w - title.length - count.length - 3)
+    const barTxt = headTxt === '' ? 'inverseText' : headTxt
     const head = (title: string, count: string) =>
       headInk === 'off' ? (
         <Box>
-          <Text bold>{title} </Text>
-          <Text dimColor>{count} </Text>
+          <Text color={headTxt === '' ? undefined : headTxt} bold>{title} </Text>
+          <Text color={headTxt === '' ? undefined : headTxt} dimColor={headTxt === ''}>
+            {count}{' '}
+          </Text>
           <Box flexGrow={1}><Text dimColor>{'─'.repeat(restOf(title, count))}</Text></Box>
         </Box>
       ) : (
         // Padded with spaces as well as filled: a surface that paints a Box's
         // background and one that only paints its cells both draw a whole bar.
         <Box backgroundColor={headInk}>
-          <Text color="inverseText" backgroundColor={headInk} bold>{title} </Text>
-          <Text color="inverseText" backgroundColor={headInk}>{count} </Text>
+          <Text color={barTxt} backgroundColor={headInk} bold>{title} </Text>
+          <Text color={barTxt} backgroundColor={headInk}>{count} </Text>
           <Box flexGrow={1} backgroundColor={headInk}>
-            <Text color="inverseText" backgroundColor={headInk}>
+            <Text color={barTxt} backgroundColor={headInk}>
               {' '.repeat(restOf(title, count))}
             </Text>
           </Box>

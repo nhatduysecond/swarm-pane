@@ -1,6 +1,6 @@
 {
   "name": "swarm-pane",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "A pane beside the transcript showing every running subagent with its model, effort and elapsed time, plus the session's task list.",
   "author": {
     "name": "Richard Dang"
@@ -34,6 +34,12 @@
       "description": "The colour of the bar behind each section heading: a theme key ('subtle', 'inactive', 'claude', 'success'...), which follows your light or dark theme, or a hex colour, which does not. 'off' draws the old plain heading with a rule after it.",
       "type": "string",
       "default": "subtle"
+    },
+    "headingText": {
+      "title": "Section heading text colour",
+      "description": "The colour of the heading's own letters: a theme key or a hex colour. Empty takes 'inverseText', which reads against the bar in either theme, or your terminal's own foreground when 'heading' is 'off'.",
+      "type": "string",
+      "default": ""
     },
     "background": {
       "title": "Pane background colour",

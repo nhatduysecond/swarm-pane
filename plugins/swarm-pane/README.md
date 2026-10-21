@@ -68,8 +68,9 @@ read the pane above the prompt.
 
 ## Settings
 
-Four fields, all optional, each with a default that needs no setting:
-`tasks`, `dock`, `heading` and `background`, described below and in the manifest.
+Five fields, all optional, each with a default that needs no setting:
+`tasks`, `dock`, `heading`, `headingText` and `background`, described below and
+in the manifest.
 
 ```
 /plugin configure swarm-pane            # in Claude Code, a screen per field
@@ -84,7 +85,10 @@ A change reloads the hooks module with the new values; the pane redraws with the
 Each section heading is a filled bar, in `subtle` by default: a theme key, so it
 follows your light or dark theme rather than a colour picked for one of them.
 `heading` takes another theme key (`inactive`, `claude`, `success`, ...), a hex
-colour, or `off` for the plain heading with a rule after it. `background` fills
+colour, or `off` for the plain heading with a rule after it. `headingText`
+colours the heading's own letters, a theme key or a hex; empty takes
+`inverseText` over a bar, and your terminal's foreground once the bar is `off`.
+`background` fills
 the whole pane the same way and is empty by default, because a fill is a fixed
 colour over the column and takes the terminal's own transparency with it. Everything else is
 coloured text on your terminal's background: one accent per agent, shared by its

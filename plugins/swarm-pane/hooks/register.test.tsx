@@ -790,6 +790,44 @@ test('every section heading is a bar in theme colours, and the pane is unfilled'
   await ui.unmount()
 })
 
+test('the heading letters take a colour of their own',
+  { options: { heading: '#303048', headingText: '#f2c14e' } },
+  async ($, on) => {
+    on('command.register', () => ({ value: { command: 'swarm' } }))
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('session.start', (_, e) => ({ cwd: e.cwd }))
+    on('clock.now', () => ({ value: 1_000_000 }))
+    on('clock.every', () => ({ value: undefined }))
+
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+    // The bar keeps its own colour; the title no longer reads 'inverseText'.
+    const title = await ui.find({ type: 'Text', text: /^TASKS / })
+    expect(title?.props?.backgroundColor).toBe('#303048')
+    expect(title?.props?.color).toBe('#f2c14e')
+    await ui.unmount()
+  })
+
+test('the letters take a colour with the bar off too',
+  { options: { heading: 'off', headingText: 'claude' } },
+  async ($, on) => {
+    on('command.register', () => ({ value: { command: 'swarm' } }))
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('session.start', (_, e) => ({ cwd: e.cwd }))
+    on('clock.now', () => ({ value: 1_000_000 }))
+    on('clock.every', () => ({ value: undefined }))
+
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+    // No bar to read against, so the letters sit on the terminal's own ground.
+    const title = await ui.find({ type: 'Text', text: /^TASKS/ })
+    expect(title?.props?.backgroundColor).toBe(undefined)
+    expect(title?.props?.color).toBe('claude')
+    await ui.unmount()
+  })
+
 test('the colours are the person\'s to set', { options: { heading: 'off', background: '#1b1b2a' } },
   async ($, on) => {
     on('command.register', () => ({ value: { command: 'swarm' } }))
