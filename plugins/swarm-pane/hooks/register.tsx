@@ -1,10 +1,12 @@
 import { atom, read, update } from 'claude-code'
-import type { ModelUsage, Register } from 'claude-code'
+import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
 import type { Agent, Todo, Zone } from '../types'
 
 const PANE = 'swarm'
 const LOG = 'log'
+/** What `todoFrom` holds when the list was read from a plan file. */
+const PLAN = 'plan'
 
 const agents = atom({ plugin: 'swarm-pane', key: 'agents' } as const, [])
 const todos = atom({ plugin: 'swarm-pane', key: 'todos' } as const, [])
@@ -13,6 +15,7 @@ const zones = atom({ plugin: 'swarm-pane', key: 'zones' } as const, [])
 const turnAt = atom({ plugin: 'swarm-pane', key: 'turnAt' } as const, 0)
 const logFor = atom({ plugin: 'swarm-pane', key: 'logFor' } as const, '')
 const todoFrom = atom({ plugin: 'swarm-pane', key: 'todoFrom' } as const, '')
+const planAt = atom({ plugin: 'swarm-pane', key: 'planAt' } as const, 0)
 
 /** One colour per agent, shared by its task row and its agent block. */
 let ticking = false
@@ -65,6 +68,66 @@ export const offRule = (zones: readonly Zone[], a: Agent): string | undefined =>
   if (a.model === 'haiku') return `${a.label} works on ${hit} with haiku`
   if (a.effort === 'low') return `${a.label} works on ${hit} at effort low`
   return undefined
+}
+
+/** How old the plan on disk may be before the pane reads it again. */
+const PLAN_EVERY = 10_000
+
+/**
+ * The checkbox lists of a plan file: `- [x]` done, `- [ ] ` waiting, anything
+ * else between the brackets in progress.
+ */
+export const parsePlan = (md: string): Todo[] => {
+  const found: Todo[] = []
+  for (const line of md.split('\n')) {
+    const row = /^\s*[-*]\s*\[(.)\]\s+(.+?)\s*$/.exec(line)
+    if (!row) continue
+    const mark = (row[1] ?? '').toLowerCase()
+    const content = (row[2] ?? '').replace(/[*`]/g, '').trim()
+    if (content === '') continue
+    found.push({
+      content,
+      status: mark === 'x' ? 'completed' : mark === ' ' ? 'pending' : 'in_progress',
+    })
+  }
+  return found
+}
+
+/**
+ * The newest plan folder's checkboxes, in file order.
+ *
+ * A build with no task list of its own leaves the section empty, while the plan
+ * the work follows sits in the repository; `plans/{date}-{slug}/` is where this
+ * project's own convention puts it, newest by name.
+ */
+const planOnDisk = async ($: EngineInterface): Promise<Todo[] | undefined> => {
+  const dirs = (await $.fs.list('plans')).filter(d => d.kind === 'dir')
+  const newest = [...dirs].sort((a, b) => (a.name < b.name ? 1 : -1))[0]
+  if (newest === undefined) return undefined
+
+  const here = `plans/${newest.name}`
+  const files = (await $.fs.list(here))
+    .filter(f => f.kind === 'file' && f.name.endsWith('.md'))
+    .sort((a, b) => (a.name < b.name ? -1 : 1))
+
+  const found: Todo[] = []
+  for (const f of files) {
+    found.push(...parsePlan(await $.fs.read(`${here}/${f.name}`)))
+    if (found.length >= 30) break
+  }
+  return found.length > 0 ? found.slice(0, 30) : undefined
+}
+
+/** Reads the plan on disk into the section, at most once every ten seconds. */
+const readPlan = async ($: EngineInterface, now: number): Promise<void> => {
+  // The clock lives in the session's own state: two sessions in one process
+  // must not starve each other's reread.
+  if (now - (await read($, planAt)) < PLAN_EVERY) return
+  await update($, planAt, () => now)
+  const found = await planOnDisk($)
+  if (found === undefined) return
+  await update($, todos, () => found)
+  await update($, todoFrom, () => PLAN)
 }
 
 /** A TodoWrite's input, as the pane keeps it. */
@@ -195,6 +258,14 @@ export const register: Register = on => {
       }
     } catch {
       // A session whose transcript cannot be read starts with an empty list.
+    }
+
+    if ((await read($, todos)).length === 0) {
+      try {
+        await readPlan($, await $.clock.now())
+      } catch {
+        // No plans folder, or nothing readable in it: the section stays empty.
+      }
     }
 
     // session.start fires again on every reload; one clock is enough.
@@ -358,8 +429,14 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const list = await read($, agents)
-    const tasks = await read($, todos)
-    const plannedBy = await read($, todoFrom)
+    let tasks = await read($, todos)
+    let plannedBy = await read($, todoFrom)
+    if (tasks.length === 0 || plannedBy === PLAN) {
+      // A plan file changes under the pane; a TodoWrite announces itself.
+      await quiet(readPlan($, await $.clock.now()))
+      tasks = await read($, todos)
+      plannedBy = await read($, todoFrom)
+    }
     await read($, tick)
     const now = await $.clock.now()
     const started = await read($, turnAt)
@@ -466,7 +543,11 @@ export const register: Register = on => {
         {head(
           'TASKS',
           `${doneTasks.length}/${tasks.length}${
-            plannedBy === '' ? '' : ` ${list.find(a => a.id === plannedBy)?.label ?? 'agent'}`
+            plannedBy === ''
+              ? ''
+              : plannedBy === PLAN
+                ? ' plan'
+                : ` ${list.find(a => a.id === plannedBy)?.label ?? 'agent'}`
           }`,
         )}
         {tasks.length === 0 && none('no task list in this session')}

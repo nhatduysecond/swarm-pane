@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { aim, bar, fmt, ktok, offRule, parseZones, spend, tokOf, wrap, zoneOf } from './register'
+import {
+  aim, bar, fmt, ktok, offRule, parsePlan, parseZones, spend, tokOf, wrap, zoneOf,
+} from './register'
 
 const PANE = {
   plugin: 'swarm-pane',
@@ -499,5 +501,63 @@ test('a plan written before the pane loaded is picked up from the transcript', a
   expect((await ui.find({ type: 'Text', text: /check the thing/ }))?.text).toContain('check')
   expect(await ui.find({ type: 'Text', text: /an older plan/ })).toBe(undefined)
   expect((await ui.find({ type: 'Text', text: /^1\/2\s*$/ }))?.text).toContain('1/2')
+  await ui.unmount()
+})
+
+test('checkbox rows of a plan file become the task list', () => {
+  const plan = `# Phase 02
+
+## Todo List
+
+- [x] dựng case PIT ngưỡng 5tr
+- [~] test ranh giới PIT tháng
+- [ ] **soát** ma trận phân quyền
+* [X] backup trước migration
+
+Not a task: - [x] inside a sentence is still a row, a bare - dash is not.
+- just a bullet
+- [ ]
+`
+  const found = parsePlan(plan)
+  // The row inside a sentence is not a row: a task line starts its own line.
+  expect(found.map(t => t.status)).toEqual(['completed', 'in_progress', 'pending', 'completed'])
+  // Emphasis is stripped, and an empty row is no task.
+  expect(found[2]?.content).toBe('soát ma trận phân quyền')
+  expect(found.some(t => t.content === '')).toBe(false)
+  expect(parsePlan('nothing here')).toEqual([])
+})
+
+test('the pane draws the newest plan folder when the session has no list', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('session.messages', () => ({ value: [] }))
+  on('fs.list', (_, e) => ({
+    value:
+      String(e.path).endsWith('plans')
+        ? [
+            { name: '261020-0900-older', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+            { name: '261021-1530-newest', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+          ]
+        : [
+            { name: 'phase-01-build.md', kind: 'file', size: 10, mtimeMs: 0, isLink: false },
+            { name: 'notes.txt', kind: 'file', size: 10, mtimeMs: 0, isLink: false },
+          ],
+  }))
+  on('fs.read', (_, e) => ({
+    value: String(e.path).includes('261021-1530-newest')
+      ? '## Todo List\n- [x] built the thing\n- [ ] check the thing\n'
+      : '- [ ] the older plan\n',
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /check the thing/ }))?.text).toContain('check')
+  expect(await ui.find({ type: 'Text', text: /older plan/ })).toBe(undefined)
+  // The heading says where the list came from.
+  expect((await ui.find({ type: 'Text', text: /1\/2 plan/ }))?.text).toContain('plan')
   await ui.unmount()
 })

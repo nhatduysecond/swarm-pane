@@ -37,6 +37,8 @@ declare module 'claude-code' {
       logFor: string
       /** Who wrote the task list: '' for the main loop, else an agentId. */
       todoFrom: string
+      /** When the plan file was last read, so the pane rereads it on its own. */
+      planAt: number
     }
   }
 }
