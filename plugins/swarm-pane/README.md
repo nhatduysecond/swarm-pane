@@ -67,6 +67,18 @@ the renderer failed to start. `claude plugin configure swarm-pane@<marketplace>`
 sets `dock` to `off` to keep your own renderer and read the pane above the
 prompt.
 
+## Colours
+
+Each section heading is a filled bar, in `subtle` by default: a theme key, so it
+follows your light or dark theme rather than a colour picked for one of them.
+`claude plugin configure swarm-pane@<marketplace>` sets `heading` to another
+theme key (`inactive`, `claude`, `success`, ...), to a hex colour, or to `off`
+for the plain heading with a rule after it. `background` fills the whole pane the
+same way and is empty by default, because a fill is a fixed colour over the
+column and takes the terminal's own transparency with it. Everything else is
+coloured text on your terminal's background: one accent per agent, shared by its
+task row and its block, green for finished work, amber for a warning.
+
 ## Risk zones
 
 If the open project's `CLAUDE.md` has a section whose heading mentions risk zones,

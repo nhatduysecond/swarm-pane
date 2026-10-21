@@ -421,6 +421,11 @@ export const register: Register = (on, options) => {
   // 'auto' reads the plan folder and, failing that, asks a small model;
   // 'plan' reads the folder only; 'off' leaves the section to the session.
   const tasksFrom = String(options?.tasks ?? 'auto')
+  // A theme key or a hex colour for the section bars, and one for the pane's
+  // own background. A theme key follows the person's light or dark theme; a hex
+  // does not, which is why neither is chosen here.
+  const headInk = String(options?.heading ?? 'subtle')
+  const paneInk = String(options?.background ?? '')
   // 'auto' switches the renderer once so the pane is a sidebar rather than a
   // block above the prompt; 'off' leaves the person's own renderer alone.
   const dockIt = String(options?.dock ?? 'auto') !== 'off'
@@ -720,13 +725,29 @@ export const register: Register = (on, options) => {
     // The pane keeps one shape: three sections, always drawn, counts beside
     // each heading. Only what sits under a heading changes while a session runs.
     const gap = <Text> </Text>
-    const head = (title: string, count: string) => (
-      <Box>
-        <Text bold>{title} </Text>
-        <Text dimColor>{count} </Text>
-        <Box flexGrow={1}><Text dimColor>{'─'.repeat(Math.max(0, w - title.length - count.length - 3))}</Text></Box>
-      </Box>
-    )
+    // The rule after the title, or the rest of the bar, is the same measure.
+    const restOf = (title: string, count: string) =>
+      Math.max(0, w - title.length - count.length - 3)
+    const head = (title: string, count: string) =>
+      headInk === 'off' ? (
+        <Box>
+          <Text bold>{title} </Text>
+          <Text dimColor>{count} </Text>
+          <Box flexGrow={1}><Text dimColor>{'─'.repeat(restOf(title, count))}</Text></Box>
+        </Box>
+      ) : (
+        // Padded with spaces as well as filled: a surface that paints a Box's
+        // background and one that only paints its cells both draw a whole bar.
+        <Box backgroundColor={headInk}>
+          <Text color="inverseText" backgroundColor={headInk} bold>{title} </Text>
+          <Text color="inverseText" backgroundColor={headInk}>{count} </Text>
+          <Box flexGrow={1} backgroundColor={headInk}>
+            <Text color="inverseText" backgroundColor={headInk}>
+              {' '.repeat(restOf(title, count))}
+            </Text>
+          </Box>
+        </Box>
+      )
     const none = (what: string) => <Text dimColor>  {what}</Text>
 
     const target = aim(known, list)
@@ -743,7 +764,13 @@ export const register: Register = (on, options) => {
     )
 
     return (
-      <Box flexDirection="column">
+      // Filled, the column is held to the room it was given: colour reaches the
+      // cells an element covers, so a short list would leave a ragged block.
+      <Box
+        flexDirection="column"
+        backgroundColor={paneInk === '' ? undefined : paneInk}
+        minHeight={paneInk === '' ? undefined : room}
+      >
         {inline && (
           <Text dimColor>
             ⤷ dock needs: fullscreen {e.viewport?.isFullscreen ? '✓' : '✗'} ·{' '}

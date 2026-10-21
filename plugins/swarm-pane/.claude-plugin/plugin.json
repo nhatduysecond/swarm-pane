@@ -1,6 +1,6 @@
 {
   "name": "swarm-pane",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "A pane beside the transcript showing every running subagent with its model, effort and elapsed time, plus the session's task list.",
   "author": {
     "name": "Richard Dang"
@@ -17,6 +17,16 @@
       "description": "Whether the pane asks for the fullscreen renderer, the only layout that seats a pane beside the transcript: 'auto' asks once, the first time the pane opens on the main screen, and the switch restarts and resumes the session; 'off' leaves your renderer alone and the pane sits above the prompt.",
       "type": "string",
       "default": "auto"
+    },
+    "heading": {
+      "description": "The colour of the bar behind each section heading: a theme key ('subtle', 'inactive', 'claude', 'success'...), which follows your light or dark theme, or a hex colour, which does not. 'off' draws the old plain heading with a rule after it.",
+      "type": "string",
+      "default": "subtle"
+    },
+    "background": {
+      "description": "A colour to fill the whole pane with, a theme key or a hex; empty leaves the pane on your terminal's own background. A fill also covers whatever transparency or background image the terminal draws under that column.",
+      "type": "string",
+      "default": ""
     }
   }
 }

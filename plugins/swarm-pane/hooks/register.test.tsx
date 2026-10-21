@@ -764,3 +764,28 @@ test('a pane the surface already docks asks for nothing', async ($, on) => {
   }
   expect(ran).toEqual([])
 })
+
+test('every section heading is a bar in theme colours, and the pane is unfilled', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+  // A theme key, never a hex: the bar follows a light theme and a dark one.
+  for (const title of [/^TASKS /, /^RUNNING /, /^DONE /]) {
+    const found = await ui.find({ type: 'Text', text: title })
+    expect(found?.props?.backgroundColor).toBe('subtle')
+    expect(found?.props?.color).toBe('inverseText')
+  }
+
+  // Nothing fills the column unless the person asks: a hex background follows
+  // no theme, and a filled column takes the terminal's own transparency with it.
+  const root = await ui.find({ type: 'Box', props: { flexDirection: 'column' } })
+  expect(root).toBeDefined()
+  expect(root?.props?.backgroundColor).toBe(undefined)
+  await ui.unmount()
+})
