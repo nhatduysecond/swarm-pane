@@ -15,8 +15,8 @@ writes and output, summed over its steps. Tokens the prompt cache served are lef
 out: the same prompt read again is not more work, and counting it would dwarf
 everything else in the row.
 
-Pressing `t` opens a second tab, `log`, with the last messages of the agent the
-stop button aims at.
+A second tab, `log`, opens beside it and shows the last messages of the agent the
+stop button aims at; `t` brings that tab forward and pins it to that agent.
 
 ## Install
 

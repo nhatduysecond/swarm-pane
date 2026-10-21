@@ -109,7 +109,11 @@ const quiet = async (work: Promise<unknown>): Promise<void> => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'swarm', description: 'Open the subagent pane' })
-    void $.ui.open({ id: PANE, title: 'swarm', columns: 56 })
+    // The log tab opens with the pane, not on the first press: a tab that
+    // appears only once you know the key exists is a tab nobody finds. It is
+    // opened first so the swarm tab is the one in front.
+    void $.ui.open({ id: LOG, title: LOG, columns: 56 })
+    void $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
 
     try {
       const md = await $.fs.read('CLAUDE.md')
@@ -131,7 +135,8 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'swarm' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'swarm', columns: 56 })
+    await $.ui.open({ id: LOG, title: LOG, columns: 56 })
+    await $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
     return { text: 'Swarm pane opened.' }
   })
 
@@ -468,13 +473,8 @@ export const register: Register = on => {
             hotkey="t"
             label="t open transcript"
             onPress={async () => {
-              const id = target?.id
-              if (id === undefined) {
-                $.ui.toast('no agent to follow')
-                return
-              }
-              await quiet(update($, logFor, () => id))
-              void $.ui.open({ id: LOG, title: LOG, columns: 56 })
+              await quiet(update($, logFor, () => target?.id ?? ''))
+              void $.ui.open({ id: LOG, title: LOG, columns: 56, focus: true })
             }}
           />
           <Button
@@ -493,9 +493,13 @@ export const register: Register = on => {
   // The log tab: what the agent the stop button aims at has been saying.
   on('ui.render', { component: 'Pane', requestId: LOG }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
-    const id = await read($, logFor)
     await read($, tick)
-    const one = (await read($, agents)).find(a => a.id === id)
+    const list = await read($, agents)
+    const pinned = await read($, logFor)
+    // With nothing pinned the tab follows the first agent still running, so it
+    // has something to show before anyone presses anything.
+    const one = list.find(a => a.id === pinned) ?? live(list).find(a => a.id !== undefined)
+    const id = one?.id ?? ''
     const room = e.props.scroll?.bodyRows ?? 24
     const found = id === '' ? [] : await $.session.messages({ agentId: id })
     const said = Array.isArray(found) ? found.slice(-Math.max(4, room - 3)) : []
@@ -505,7 +509,7 @@ export const register: Register = on => {
         <Box>
           <Text bold color={INK[0]}>{one?.label ?? '--'} </Text>
           <Box flexGrow={1} minWidth={0}>
-            <Text wrap="truncate-end">{one?.desc ?? 'press t in the swarm pane'}</Text>
+            <Text wrap="truncate-end">{one?.desc ?? 'no agent to follow yet'}</Text>
           </Box>
         </Box>
         {said.length === 0 && (

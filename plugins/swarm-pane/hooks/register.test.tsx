@@ -246,9 +246,13 @@ test('a flagged agent raises a bar under the running list, not a section', async
   await ui.unmount()
 })
 
-test('the log tab says what to press while it follows no agent', async ($, on) => {
+test('the log tab opens with the pane and says it follows nothing yet', async ($, on) => {
+  const opened: string[] = []
   on('command.register', () => ({ value: { command: 'swarm' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('clock.now', () => ({ value: 1_000_000 }))
   on('clock.every', () => ({ value: undefined }))
@@ -261,7 +265,9 @@ test('the log tab says what to press while it follows no agent', async ($, on) =
     requestId: 'log',
     props: { ...PANE.props, title: 'log' },
   })
-  expect((await ui.find({ type: 'Text', text: /press t/ }))?.text).toContain('swarm pane')
+  // Both tabs are there from the start; swarm is opened last, so it is in front.
+  expect(opened).toEqual(['log', 'swarm'])
+  expect((await ui.find({ type: 'Text', text: /no agent/ }))?.text).toContain('follow')
   await ui.unmount()
 })
 
