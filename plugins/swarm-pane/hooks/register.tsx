@@ -12,6 +12,7 @@ const zones = atom({ plugin: 'swarm-pane', key: 'zones' } as const, [])
 const turnAt = atom({ plugin: 'swarm-pane', key: 'turnAt' } as const, 0)
 
 /** One colour per agent, shared by its task row and its agent block. */
+let ticking = false
 const INK = ['#ff2d87', '#4ddbd0', '#a78bfa', '#ffb02e']
 const WARN = '#ffb02e'
 const OK = '#35d07f'
@@ -70,8 +71,9 @@ export const fmt = (ms: number): string => {
 
 /** Grey bar: elapsed against the longest-running live agent. Not progress. */
 export const bar = (ms: number, longest: number, w = 8): string => {
-  const n = longest > 0 ? Math.round((ms / longest) * w) : 0
-  return '█'.repeat(Math.min(w, n)) + '░'.repeat(Math.max(0, w - n))
+  // A clock that steps back would make ms negative, and repeat() throws on that.
+  const n = Math.max(0, Math.min(w, longest > 0 ? Math.round((ms / longest) * w) : 0))
+  return '█'.repeat(n) + '░'.repeat(w - n)
 }
 
 const live = (list: readonly Agent[]) => list.filter(a => a.endedAt === undefined)
@@ -97,11 +99,14 @@ export const register: Register = on => {
       // No CLAUDE.md in this project: no chips, no warnings.
     }
 
-    // The clock ticks only while an agent runs, to avoid pointless redraws.
-    $.clock.every(1000, async () => {
-      const list = await read($, agents)
-      if (live(list).length > 0) await update($, tick, n => n + 1)
-    })
+    // session.start fires again on every reload; one clock is enough.
+    if (!ticking) {
+      ticking = true
+      $.clock.every(1000, async () => {
+        const list = await read($, agents)
+        if (live(list).length > 0) await quiet(update($, tick, n => n + 1))
+      })
+    }
 
     return next(e)
   })
@@ -143,14 +148,20 @@ export const register: Register = on => {
 
     const ran = await next(e)
 
-    // A background agent's call returns the moment it launches, so this is not
-    // the end of its run: `turn.complete` carrying its agentId is. Only an agent
-    // that never reported an agentId (a remote or workflow one) is closed here.
-    const done = await $.clock.now()
+    // The call returns the moment a background agent launches, and its record
+    // carries the agentId. Taking it here, rather than waiting for the
+    // agent.spawn hook, is what keeps a live agent out of the done list.
+    const id = (ran as { result?: { agentId?: string } }).result?.agentId
+    const closed = await $.clock.now()
     await quiet(
       update($, agents, list =>
         list.map(a =>
-          a.callId === one.callId && a.id === undefined ? { ...a, endedAt: done } : a,
+          a.callId === one.callId
+            ? id === undefined
+              ? // Nothing to follow: a remote or workflow agent ends with its call.
+                { ...a, endedAt: closed }
+              : { ...a, id }
+            : a,
         ),
       ),
     )
@@ -211,7 +222,7 @@ export const register: Register = on => {
       if (Array.isArray(list)) {
         await quiet(
           update($, todos, () =>
-            list.map(t => ({ content: t.content, status: t.status })),
+            list.map(t => ({ content: String(t.content ?? ''), status: String(t.status ?? '') })),
           ),
         )
       }
@@ -340,7 +351,7 @@ export const register: Register = on => {
             <Box>
               <Text color={ink(a)} bold>{a.label} </Text>
               <Box flexGrow={1} minWidth={0}><Text wrap="truncate-end">{a.desc}</Text></Box>
-              {!stack && <Text dimColor>{a.model} · {a.effort}</Text>}
+              {!stack && <Text dimColor> {a.model} · {a.effort}</Text>}
             </Box>
             <Box paddingLeft={stack ? 0 : 5}>
               <Box flexGrow={1}>
@@ -369,7 +380,7 @@ export const register: Register = on => {
             <Text color={OK}>{a.label} </Text>
             <Box flexGrow={1} minWidth={0}><Text dimColor wrap="truncate-end">{a.desc}</Text></Box>
             <Text dimColor>
-              {a.model} · {a.effort}{showChip ? ` · ${fmt((a.endedAt ?? 0) - a.startedAt)}` : ''}
+              {' '}{a.model} · {a.effort}{showChip ? ` · ${fmt((a.endedAt ?? 0) - a.startedAt)}` : ''}
             </Text>
           </Box>
         ))}

@@ -174,3 +174,33 @@ test('the four headings stay on an empty session', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /no agent running/ }))?.text).toContain('no agent')
   await ui.unmount()
 })
+
+test('an agent whose call reports an agentId stays in RUNNING', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  // A background agent's call returns at launch and hands back its id.
+  on('tool.call', () => ({ result: { agentId: 'ag-7' } }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'Agent',
+    description: 'review the pane code',
+    prompt: 'x',
+    subagent_type: 'general-purpose',
+    model: 'sonnet',
+    effort: 'medium',
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // It launched and has not finished: RUNNING holds it, DONE is still empty.
+  expect(await ui.find({ type: 'Text', text: /no agent running/ })).toBe(undefined)
+  expect((await ui.find({ type: 'Text', text: /nothing finished yet/ }))?.text)
+    .toContain('nothing finished')
+  expect((await ui.find({ type: 'Text', text: /review the pane code/ }))?.text)
+    .toContain('review the pane code')
+  await ui.unmount()
+})
