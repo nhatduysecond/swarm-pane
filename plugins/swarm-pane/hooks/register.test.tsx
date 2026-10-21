@@ -169,7 +169,7 @@ test('the four headings stay on an empty session', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   // Nothing has happened yet: the shape is the same, only the rows under it differ.
   for (const heading of ['TASKS', 'RUNNING', 'ALERTS', 'DONE']) {
-    expect((await ui.find({ type: 'Text', text: new RegExp(`^${heading}$`) }))?.text).toBe(heading)
+    expect((await ui.find({ type: 'Text', text: new RegExp(`^${heading}\\s*$`) }))?.text).toContain(heading)
   }
   expect((await ui.find({ type: 'Text', text: /no agent running/ }))?.text).toContain('no agent')
   await ui.unmount()

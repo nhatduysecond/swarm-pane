@@ -9,6 +9,8 @@ export type Agent = {
   type: string
   model: string
   effort: string
+  /** Its own turn's id, what the stop button ends */
+  turnId?: string
   startedAt: number
   endedAt?: number
   tools: number
@@ -21,6 +23,6 @@ export type Zone = { label: string; terms: string[] }
 
 declare module 'claude-code' {
   interface PluginState {
-    'swarm-pane': { agents: Agent[]; todos: Todo[]; tick: number; zones: Zone[] }
+    'swarm-pane': { agents: Agent[]; todos: Todo[]; tick: number; zones: Zone[]; turnAt: number }
   }
 }

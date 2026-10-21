@@ -9,6 +9,7 @@ const agents = atom({ plugin: 'swarm-pane', key: 'agents' } as const, [])
 const todos = atom({ plugin: 'swarm-pane', key: 'todos' } as const, [])
 const tick = atom({ plugin: 'swarm-pane', key: 'tick' } as const, 0)
 const zones = atom({ plugin: 'swarm-pane', key: 'zones' } as const, [])
+const turnAt = atom({ plugin: 'swarm-pane', key: 'turnAt' } as const, 0)
 
 /** One colour per agent, shared by its task row and its agent block. */
 const INK = ['#ff2d87', '#4ddbd0', '#a78bfa', '#ffb02e']
@@ -168,6 +169,22 @@ export const register: Register = on => {
     return ran
   })
 
+  // A subagent's turn carries the id the stop button needs.
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const at = await $.clock.now()
+      await quiet(update($, turnAt, () => at))
+    }
+    if (e.agentId) {
+      await quiet(
+        update($, agents, list =>
+          list.map(a => (a.id === e.agentId ? { ...a, turnId: e.turnId } : a)),
+        ),
+      )
+    }
+    return next(e)
+  })
+
   // A subagent answers with its own turn.complete; that is when its run ends.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId) {
@@ -203,11 +220,13 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const list = await read($, agents)
     const tasks = await read($, todos)
     await read($, tick)
     const now = await $.clock.now()
+    const started = await read($, turnAt)
+    const turnStart = started > 0 ? started : now
 
     // The pane is resizable, so every column follows the width the engine reports.
     const w = e.props.bodyColumns
@@ -263,11 +282,21 @@ export const register: Register = on => {
     const gap = <Text> </Text>
     const head = (title: string, count: string) => (
       <Box>
-        <Box flexGrow={1}><Text bold>{title}</Text></Box>
-        <Text dimColor>{count}</Text>
+        <Text bold>{title} </Text>
+        <Text dimColor>{count} </Text>
+        <Box flexGrow={1}><Text dimColor>{'─'.repeat(Math.max(0, w - title.length - count.length - 3))}</Text></Box>
       </Box>
     )
     const none = (what: string) => <Text dimColor>  {what}</Text>
+
+    // The stop button aims at the flagged agent, else the one running longest.
+    const flagged = running.find(a => offRule(known, a) !== undefined)
+    const target = (flagged ?? [...running].sort((x, y) => x.startedAt - y.startedAt)[0])
+    const summary = [
+      `${doneTasks.length}/${tasks.length} tasks`,
+      ...running.map(a => `${a.label} ${a.desc} · ${a.model} · ${a.effort} · ${fmt(now - a.startedAt)}`),
+      ...warns.map(wn => `! ${wn}`),
+    ].join('\n')
 
     return (
       <Box flexDirection="column">
@@ -277,6 +306,13 @@ export const register: Register = on => {
             {e.viewport?.columns ?? 0}/110 cols
           </Text>
         )}
+
+        <Box>
+          <Box flexGrow={1}><Text dimColor>this turn · {fmt(now - turnStart)}</Text></Box>
+          <Text dimColor>
+            {list.length} agents · {list.reduce((n, a) => n + a.tools, 0)} tools
+          </Text>
+        </Box>
 
         {head('TASKS', `${doneTasks.length}/${tasks.length}`)}
         {tasks.length === 0 && none('no task list in this session')}
@@ -337,6 +373,34 @@ export const register: Register = on => {
             </Text>
           </Box>
         ))}
+
+        {gap}
+        <Box gap={1}>
+          {target && (
+            <Button
+              hotkey="s"
+              label={`s stop ${target.label}`}
+              onPress={async press => {
+                // A subagent's own turn is what the stop ends; a refusal is reported.
+                try {
+                  await $.turn.abort({ turnId: target.turnId as string })
+                  $.ui.toast(`${target.label} stopped`)
+                } catch {
+                  $.ui.toast(`${target.label} would not stop`)
+                }
+                void press
+              }}
+            />
+          )}
+          <Button
+            hotkey="c"
+            label="c copy summary"
+            onPress={press => {
+              void $.ui.copy({ text: summary, surface: press.surface })
+            }}
+          />
+        </Box>
+        <Text dimColor>Tab into the pane · arrows scroll · Enter presses</Text>
       </Box>
     )
   })
