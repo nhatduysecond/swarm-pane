@@ -33,21 +33,25 @@ const SAMPLE = `# CLAUDE.md
 - Unrelated: nothing here
 `
 
-test('vung rui ro doc tu CLAUDE.md, khong gan cung du an nao', () => {
+test('risk zones come from CLAUDE.md, never hardcoded', () => {
   const zones = parseZones(SAMPLE)
   expect(zones.map(z => z.label)).toEqual(['checkou', 'invento', 'auth'])
 
   expect(zoneOf(zones, 'fix refund rounding')).toBe('checkou')
   expect(zoneOf(zones, 'warehouse sync job')).toBe('invento')
-  expect(zoneOf(zones, 'đổi màu nút đăng nhập')).toBe(undefined)
-  // Muc ngoai phan risk zone khong duoc tinh.
+  expect(zoneOf(zones, 'change the login button colour')).toBe(undefined)
+  // A bullet outside the risk-zone section does not count.
   expect(zoneOf(zones, 'dunning email')).toBe(undefined)
 
-  // Du an khong khai thi khong co vung nao, pane van chay.
+  // A project that declares none gets no zones; the pane still runs.
   expect(parseZones('# CLAUDE.md\n\nNothing here.')).toEqual([])
+
+  // The heading is matched in English and in Vietnamese, on purpose.
+  const vi = parseZones('## Vùng rủi ro\n\n- Payments: refund, payout\n')
+  expect(vi.map(z => z.label)).toEqual(['payment'])
 })
 
-test('rule chan model yeu o vung rui ro', () => {
+test('a weak model in a risk zone raises a warning', () => {
   const zones = parseZones(SAMPLE)
   const weak = {
     label: 'a-04', callId: 'c', desc: 'stripe webhook retry',
@@ -55,13 +59,13 @@ test('rule chan model yeu o vung rui ro', () => {
   }
   expect(offRule(zones, weak)).toContain('checkou')
   expect(offRule(zones, { ...weak, model: 'sonnet', effort: 'high' })).toBe(undefined)
-  // Viec thuong thi model yeu van duoc.
-  expect(offRule(zones, { ...weak, desc: 'đổi màu nút' })).toBe(undefined)
-  // Khong co vung nao thi khong canh bao gi.
+  // Ordinary work on a weak model is fine.
+  expect(offRule(zones, { ...weak, desc: 'change a button colour' })).toBe(undefined)
+  // With no zones there is nothing to warn about.
   expect(offRule([], weak)).toBe(undefined)
 })
 
-test('dong ho va thanh xam', () => {
+test('the clock and the grey bar', () => {
   expect(fmt(0)).toBe('0:00')
   expect(fmt(161_000)).toBe('2:41')
   expect(bar(100, 100, 8)).toBe('████████')
@@ -70,7 +74,7 @@ test('dong ho va thanh xam', () => {
   expect(bar(50, 0, 8)).toBe('░░░░░░░░')
 })
 
-test('pane liet ke agent dang chay kem model va effort', async ($, on) => {
+test('the pane lists an agent with its model and effort', async ($, on) => {
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -82,7 +86,7 @@ test('pane liet ke agent dang chay kem model va effort', async ($, on) => {
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.tool.call({
     tool: 'Agent',
-    description: 'soát ma trận phân quyền',
+    description: 'review the permission matrix',
     prompt: 'x',
     subagent_type: 'Explore',
     model: 'haiku',
@@ -90,12 +94,12 @@ test('pane liet ke agent dang chay kem model va effort', async ($, on) => {
   })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /ma trận/ }))?.text).toContain('ma trận')
+  expect((await ui.find({ type: 'Text', text: /permission/ }))?.text).toContain('permission')
   expect((await ui.find({ type: 'Text', text: /haiku/ }))?.text).toContain('low')
   await ui.unmount()
 })
 
-test('pane hep van giu model va effort, chi bo cot phu', async ($, on) => {
+test('a narrow pane keeps model and effort, dropping optional columns', async ($, on) => {
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -120,16 +124,16 @@ test('pane hep van giu model va effort, chi bo cot phu', async ($, on) => {
       surface: 'terminal',
       props: { ...PANE.props, bodyColumns },
     })
-    // Model va effort la thu sep can nhat, khong duoc rot o be rong nao.
+    // Model and effort are the point of the pane; no width may drop them.
     expect((await ui.find({ type: 'Text', text: /sonnet/ }))?.text).toContain('medium')
     await ui.unmount()
   }
 })
 
-test('agent khong bao agentId thi dong khi loi goi tra ve', async ($, on) => {
-  // Bo test khong chay agent.spawn, nen day la duong du phong: agent tu xa
-  // (workflow) khong co agentId, chi co the dong khi loi goi Agent tra ve.
-  // Duong chinh — agent nen dong bang turn.complete — kiem truc tiep tren phien that.
+test('an agent that reports no agentId closes when its call returns', async ($, on) => {
+  // The harness does not run agent.spawn, so this covers the fallback: a remote
+  // (workflow) agent reports no agentId and can only close when its call returns.
+  // The main path — a background agent closing on turn.complete — is checked live.
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))

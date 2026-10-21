@@ -273,7 +273,8 @@ export const register: Register = on => {
           <Text dimColor>{doneTasks.length}/{tasks.length}{w >= 34 ? ' tasks' : ''}</Text>
         </Box>
 
-        {tasks.length > 0 && <Text bold>{'\n'}TASKS</Text>}
+        <Text bold>{'\n'}TASKS</Text>
+        {tasks.length === 0 && <Text dimColor>  no task list in this session</Text>}
         {tight && doneTasks.length > 0 && (
           <Text dimColor>[✓] +{doneTasks.length} done earlier</Text>
         )}
@@ -290,7 +291,8 @@ export const register: Register = on => {
           return row(mark, markInk, t.content, zoneOf(known, t.content), a?.label, a ? ink(a) : undefined)
         })}
 
-        {running.length > 0 && <Text bold>{'\n'}RUNNING</Text>}
+        <Text bold>{'\n'}RUNNING</Text>
+        {running.length === 0 && <Text dimColor>  no agent running</Text>}
         {running.map(a => (
           <Box flexDirection="column">
             <Box>
@@ -325,9 +327,6 @@ export const register: Register = on => {
           </Box>
         ))}
 
-        {list.length === 0 && tasks.length === 0 && (
-          <Text dimColor>No agents or tasks in this session yet.</Text>
-        )}
       </Box>
     )
   })

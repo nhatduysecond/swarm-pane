@@ -24,7 +24,9 @@ conditions a dock is still missing.
 ## Risk zones
 
 If the open project's `CLAUDE.md` has a section whose heading mentions risk zones,
-the pane reads it. Each bullet shaped `- Label: term, term` becomes one zone. Task
+the pane reads it. Each bullet shaped `- Label: term, term` becomes one zone. The heading is
+matched in English and in Vietnamese (`Vùng rủi ro`), so a bilingual project
+needs no second section. Task
 rows touching a zone get a label, and an agent sent into one on `haiku` or at
 `effort: low` raises a warning the moment it spawns, while there is still time to
 stop it.
