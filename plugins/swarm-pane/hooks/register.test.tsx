@@ -125,3 +125,30 @@ test('pane hep van giu model va effort, chi bo cot phu', async ($, on) => {
     await ui.unmount()
   }
 })
+
+test('agent khong bao agentId thi dong khi loi goi tra ve', async ($, on) => {
+  // Bo test khong chay agent.spawn, nen day la duong du phong: agent tu xa
+  // (workflow) khong co agentId, chi co the dong khi loi goi Agent tra ve.
+  // Duong chinh — agent nen dong bang turn.complete — kiem truc tiep tren phien that.
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({
+    tool: 'Agent',
+    description: 'remote workflow step',
+    prompt: 'x',
+    subagent_type: 'general-purpose',
+    model: 'sonnet',
+    effort: 'medium',
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /DONE/ }))?.text).toContain('DONE')
+  await ui.unmount()
+})

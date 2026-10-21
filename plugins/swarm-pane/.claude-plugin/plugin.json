@@ -1,8 +1,10 @@
 {
   "name": "swarm-pane",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A pane beside the transcript showing every running subagent with its model, effort and elapsed time, plus the session's task list.",
-  "author": { "name": "Richard Dang" },
+  "author": {
+    "name": "Richard Dang"
+  },
   "license": "MIT",
   "types": "./types/index.d.ts"
 }

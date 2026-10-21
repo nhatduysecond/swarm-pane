@@ -141,10 +141,16 @@ export const register: Register = on => {
     if (warn) $.ui.toast(`⚠ ${warn}`)
 
     const ran = await next(e)
+
+    // A background agent's call returns the moment it launches, so this is not
+    // the end of its run: `turn.complete` carrying its agentId is. Only an agent
+    // that never reported an agentId (a remote or workflow one) is closed here.
     const done = await $.clock.now()
     await quiet(
       update($, agents, list =>
-        list.map(a => (a.callId === one.callId ? { ...a, endedAt: done } : a)),
+        list.map(a =>
+          a.callId === one.callId && a.id === undefined ? { ...a, endedAt: done } : a,
+        ),
       ),
     )
 
@@ -160,6 +166,19 @@ export const register: Register = on => {
       ),
     )
     return ran
+  })
+
+  // A subagent answers with its own turn.complete; that is when its run ends.
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId) {
+      const done = await $.clock.now()
+      await quiet(
+        update($, agents, list =>
+          list.map(a => (a.id === e.agentId && a.endedAt === undefined ? { ...a, endedAt: done } : a)),
+        ),
+      )
+    }
+    return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
