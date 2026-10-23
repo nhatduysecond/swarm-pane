@@ -14,6 +14,8 @@ const PANE = 'swarm'
 const LOG = 'log'
 /** Store key: the renderer has been asked for once, whatever came of it. */
 const DOCKED = 'asked-for-the-dock'
+/** Store key: the session whose `/swarm` restarted it into the dock. */
+const REOPEN = 'reopen-after-the-dock'
 /** What `todoFrom` holds when the list was read from a plan file. */
 const PLAN = 'plan'
 /** What it holds when a small model read the list out of the conversation. */
@@ -405,6 +407,8 @@ const dock = async ($: EngineInterface, isFullscreen: boolean | undefined): Prom
   await $.store.set(DOCKED, true)
   // Queued by the engine and run once the session is idle, so a turn in flight
   // finishes first and the restart resumes it where it stood.
+  // A mark that fails to land costs a second `/swarm`, never the switch.
+  await quiet($.session.id().then(id => $.store.set(REOPEN, id)))
   await $.command.run({ command: 'tui', args: 'fullscreen' })
 }
 
@@ -415,6 +419,15 @@ const startTicker = ($: EngineInterface): void => {
     const list = await read($, agents)
     if (live(list).length > 0) await quiet(update($, tick, n => n + 1))
   })
+}
+
+const openPane = async ($: EngineInterface): Promise<void> => {
+  // The log tab opens with the pane, not on the first press: a tab that
+  // appears only once you know the key exists is a tab nobody finds. It is
+  // opened first so the swarm tab is the one in front.
+  await $.ui.open({ id: LOG, title: LOG, columns: 56 })
+  await $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
+  startTicker($)
 }
 
 export const register: Register = (on, options) => {
@@ -437,6 +450,18 @@ export const register: Register = (on, options) => {
     // The pane waits for `/swarm`; the bookkeeping below still starts now so the
     // pane has the whole session to show when it opens.
     await $.command.register({ name: 'swarm', description: 'Open the subagent pane' })
+    // The one exception: the restart into the dock that `/swarm` itself asked
+    // for comes back without its panes, so that session reopens them, once. A
+    // restart that never came back opens nothing in any other session.
+    try {
+      const reopenFor = await $.store.get(REOPEN)
+      if (reopenFor !== undefined) {
+        await $.store.delete(REOPEN)
+        if (reopenFor === (await $.session.id())) await openPane($)
+      }
+    } catch {
+      // No store: the person runs `/swarm` again after the switch.
+    }
 
     try {
       const md = await $.fs.read('CLAUDE.md')
@@ -496,12 +521,7 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'swarm' }, async $ => {
-    // The log tab opens with the pane, not on the first press: a tab that
-    // appears only once you know the key exists is a tab nobody finds. It is
-    // opened first so the swarm tab is the one in front.
-    await $.ui.open({ id: LOG, title: LOG, columns: 56 })
-    await $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
-    startTicker($)
+    await openPane($)
     return { text: 'Swarm pane opened.' }
   })
 

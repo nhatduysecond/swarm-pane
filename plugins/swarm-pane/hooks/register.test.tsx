@@ -744,6 +744,54 @@ test('the pane asks for the renderer that seats it on the right, once', async ($
   expect(ran).toEqual(['tui fullscreen'])
 })
 
+test('the restart /swarm asked for reopens the pane in that session alone', async ($, on) => {
+  const opened: string[] = []
+  on('command.register', () => ({ value: { command: 'swarm' } }))
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  let sessionId = 'asked'
+  on('session.id', () => ({ value: sessionId }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  const kept: Record<string, unknown> = {}
+  on('store.get', (_, e) => ({ value: kept[e.key] }))
+  on('store.set', (_, e) => {
+    kept[e.key] = e.value
+    return { value: undefined }
+  })
+  on('store.delete', (_, e) => {
+    delete kept[e.key]
+    return { value: undefined }
+  })
+  on('command.run', () => ({ text: '' }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const inline = await $.ui.mount({
+    ...PANE, surface: 'terminal', viewport: { columns: 120, rows: 40, isFullscreen: false },
+  })
+  await inline.unmount()
+  expect(opened).toEqual([])
+
+  // The restart resumes the same session, which comes back with its tabs.
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(opened).toEqual(['log', 'swarm'])
+
+  // Once: the next start of it opens nothing.
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(opened).toEqual(['log', 'swarm'])
+
+  // A restart that never came back leaves its mark for another session to find,
+  // which clears it and opens nothing.
+  kept['reopen-after-the-dock'] = 'asked'
+  sessionId = 'later'
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(opened).toEqual(['log', 'swarm'])
+  expect(kept['reopen-after-the-dock']).toBeUndefined()
+})
+
 test('a pane the surface already docks asks for nothing', async ($, on) => {
   on('command.register', () => ({ value: { command: 'swarm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))

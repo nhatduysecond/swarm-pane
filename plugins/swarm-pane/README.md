@@ -61,8 +61,8 @@ Where a pane's seat comes from is not the plugin's to decide: `placement` is
 read-only, and only the fullscreen layout keeps a column beside the transcript —
 the main screen scrolls, so there is nowhere to the right to keep. So the first
 time the pane opens on the main screen it runs `/tui fullscreen` for you, which
-restarts and resumes the session and saves the choice to your own preferences:
-every session after that opens docked, and the ask is never made again, even if
+restarts and resumes the session with the pane open again, and saves the choice to your own preferences:
+every `/swarm` after that opens docked, and the ask is never made again, even if
 the renderer failed to start. Set `dock` to `off` to keep your own renderer and
 read the pane above the prompt.
 
@@ -123,7 +123,7 @@ press: the stop button ends the agent's turn, and the warning raises a toast.
 
 | Hook | What it does | Changes |
 |---|---|---|
-| `session.start` | Registers the `/swarm` command (the pane opens only when you run it), reads the project's `CLAUDE.md` for risk zones, the session's own transcript for a plan already made, and the newest `plans/` folder when there is none | none; passes through |
+| `session.start` | Registers the `/swarm` command (the pane opens only when you run it, or once more after the restart into the dock that `/swarm` itself asked for), reads the project's `CLAUDE.md` for risk zones, the session's own transcript for a plan already made, and the newest `plans/` folder when there is none | none; passes through |
 | `session.end` (`clear`) | Empties the agents, the tokens and the task list when a `/clear` ends the conversation. The engine raises no `session.start` for what follows a clear, so this is the only place the pane learns of it | none; passes through |
 | `command.run` (`swarm`) | Answers the plugin's own `/swarm` command by opening both tabs, the only place the pane opens | answers only its own command; no other command reaches it |
 | `tool.call` (`Agent`) | Reads the description, subagent type, model and effort of a subagent about to start, and raises the toast when it breaks the rule | none; the call runs as written, and a failure of this bookkeeping is swallowed before it |
