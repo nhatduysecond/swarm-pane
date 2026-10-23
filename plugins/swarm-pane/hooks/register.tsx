@@ -434,12 +434,9 @@ export const register: Register = (on, options) => {
   // block above the prompt; 'off' leaves the person's own renderer alone.
   const dockIt = String(options?.dock ?? 'auto') !== 'off'
   on('session.start', async ($, e, next) => {
+    // The pane waits for `/swarm`; the bookkeeping below still starts now so the
+    // pane has the whole session to show when it opens.
     await $.command.register({ name: 'swarm', description: 'Open the subagent pane' })
-    // The log tab opens with the pane, not on the first press: a tab that
-    // appears only once you know the key exists is a tab nobody finds. It is
-    // opened first so the swarm tab is the one in front.
-    void $.ui.open({ id: LOG, title: LOG, columns: 56 })
-    void $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
 
     try {
       const md = await $.fs.read('CLAUDE.md')
@@ -499,6 +496,9 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'swarm' }, async $ => {
+    // The log tab opens with the pane, not on the first press: a tab that
+    // appears only once you know the key exists is a tab nobody finds. It is
+    // opened first so the swarm tab is the one in front.
     await $.ui.open({ id: LOG, title: LOG, columns: 56 })
     await $.ui.open({ id: PANE, title: PANE, columns: 56, focus: true })
     startTicker($)
